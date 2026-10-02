@@ -32,8 +32,14 @@ const X = {
 };
 
 // ---------- Keyboard (color / premium emoji) ----------
-// Premium emoji icon chaile ID boshao, jemon bal: '5392092877456258019'. Faka thakle icon ashbe na.
-const EMOJI = { bal: '', tasks: '', ref: '', sup: '', lang: '' };
+// Premium emoji ID gulo (string hishebe). Faka rakhle icon ashbe na.
+const EMOJI = {
+  bal: '5445353829304387411',
+  tasks: '5436182278831103936',
+  ref: '4909043075529048789',
+  sup: '5307746710682869587',
+  lang: '6017109689748164760'
+};
 // primary = blue, success = green, danger = red
 const STYLE = { bal: 'primary', tasks: 'success', ref: 'success', sup: 'danger', lang: 'primary' };
 const ADMIN_BTN = '🛠 Admin Panel';
@@ -49,8 +55,12 @@ const menuKb = (l, adm) => {
 };
 const langKb = { keyboard: LANGS.map((k) => [{ text: L[k].name }]), resize_keyboard: true, one_time_keyboard: true };
 
+// emoji/symbol bad diye shudhu letter-number milay (purano emoji-wala keyboard-o kaj korbe)
+const norm = (s) => String(s).replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
 function actionOf(text) {
-  for (const k of LANGS) for (const [a, label] of Object.entries(L[k].btn)) if (label === text) return a;
+  const t = norm(text);
+  if (!t) return null;
+  for (const k of LANGS) for (const [a, label] of Object.entries(L[k].btn)) if (norm(label) === t) return a;
   return null;
 }
 const langOf = (text) => LANGS.find((k) => L[k].name === text);
