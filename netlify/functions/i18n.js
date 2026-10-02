@@ -1,7 +1,7 @@
 const L = {
   en: {
     name: '🇬🇧 English',
-    btn: { bal: '💰 Balance', tasks: '📋 Tasks', ref: '👥 Referral', sup: '🆘 Support', lang: '🌐 Language' },
+    btn: { bal: 'Balance', tasks: 'Tasks', ref: 'Referral', sup: 'Support', lang: 'Language' },
     chooseLang: '🌐 Choose your language:',
     welcome: '🤖 Welcome to Earnix!\n\nComplete tasks, earn rewards and withdraw your balance.',
     bal: (b, e, w) => `💰 Balance\n\nCurrent balance: $${b} USDT\nTotal earned: $${e} USDT\nTotal withdrawn: $${w} USDT`,
@@ -29,7 +29,7 @@ const L = {
   },
   ar: {
     name: '🇸🇦 العربية',
-    btn: { bal: '💰 الرصيد', tasks: '📋 المهام', ref: '👥 الإحالة', sup: '🆘 الدعم', lang: '🌐 اللغة' },
+    btn: { bal: 'الرصيد', tasks: 'المهام', ref: 'الإحالة', sup: 'الدعم', lang: 'اللغة' },
     chooseLang: '🌐 اختر لغتك:',
     welcome: '🤖 مرحباً بك في Earnix!\n\nأكمل المهام، اربح المكافآت واسحب رصيدك.',
     bal: (b, e, w) => `💰 الرصيد\n\nالرصيد الحالي: $${b} USDT\nإجمالي الأرباح: $${e} USDT\nإجمالي السحوبات: $${w} USDT`,
@@ -57,7 +57,7 @@ const L = {
   },
   ru: {
     name: '🇷🇺 Русский',
-    btn: { bal: '💰 Баланс', tasks: '📋 Задания', ref: '👥 Рефералы', sup: '🆘 Поддержка', lang: '🌐 Язык' },
+    btn: { bal: 'Баланс', tasks: 'Задания', ref: 'Рефералы', sup: 'Поддержка', lang: 'Язык' },
     chooseLang: '🌐 Выберите язык:',
     welcome: '🤖 Добро пожаловать в Earnix!\n\nВыполняйте задания, получайте награды и выводите баланс.',
     bal: (b, e, w) => `💰 Баланс\n\nТекущий баланс: $${b} USDT\nВсего заработано: $${e} USDT\nВсего выведено: $${w} USDT`,
