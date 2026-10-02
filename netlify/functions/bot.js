@@ -18,12 +18,15 @@ async function setting(key) {
 }
 const setState = (id, state, data = null) => sb.from('users').update({ state, state_data: data }).eq('id', id);
 
+const EMOJI = { bal: '', tasks: '', ref: '', sup: '', lang: '' }; // custom emoji ID gulo ekhane dao (optional)
+const STYLE = { bal: 'primary', tasks: 'success', ref: 'primary', sup: 'danger', lang: 'primary' };
+const mk = (l, k) => {
+  const b = { text: L[l].btn[k], style: STYLE[k] };
+  if (EMOJI[k]) b.icon_custom_emoji_id = EMOJI[k];
+  return b;
+};
 const menuKb = (l) => ({
-  keyboard: [
-    [{ text: L[l].btn.bal }, { text: L[l].btn.tasks }],
-    [{ text: L[l].btn.ref }, { text: L[l].btn.sup }],
-    [{ text: L[l].btn.lang }]
-  ],
+  keyboard: [[mk(l, 'bal'), mk(l, 'tasks')], [mk(l, 'ref'), mk(l, 'sup')], [mk(l, 'lang')]],
   resize_keyboard: true
 });
 const langKb = { keyboard: LANGS.map((k) => [{ text: L[k].name }]), resize_keyboard: true, one_time_keyboard: true };
