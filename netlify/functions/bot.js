@@ -18,7 +18,10 @@ async function setting(key) {
 }
 const setState = (id, state, data = null) => sb.from('users').update({ state, state_data: data }).eq('id', id);
 
-const EMOJI = { bal: '', tasks: '', ref: '', sup: '', lang: '' }; // custom emoji ID gulo ekhane dao (optional)
+// ---------- Button style / premium emoji ----------
+// Premium emoji icon chaile ID boshao, jemon bal: '5392092877456258019'. Faka thakle icon ashbe na.
+// ID boshale i18n.js-er btn label theke Unicode emoji muche dite hobe, noile emoji duibar dekhabe.
+const EMOJI = { bal: '', tasks: '', ref: '', sup: '', lang: '' };
 const STYLE = { bal: 'primary', tasks: 'success', ref: 'primary', sup: 'danger', lang: 'primary' };
 const mk = (l, k) => {
   const b = { text: L[l].btn[k], style: STYLE[k] };
@@ -30,6 +33,11 @@ const menuKb = (l) => ({
   resize_keyboard: true
 });
 const langKb = { keyboard: LANGS.map((k) => [{ text: L[k].name }]), resize_keyboard: true, one_time_keyboard: true };
+
+const approveRow = (id) => [[
+  { text: '✅ Approve', callback_data: `ok:${id}`, style: 'success' },
+  { text: '❌ Reject', callback_data: `no:${id}`, style: 'danger' }
+]];
 
 function actionOf(text) {
   for (const k of LANGS) for (const [a, label] of Object.entries(L[k].btn)) if (label === text) return a;
@@ -67,6 +75,12 @@ exports.handler = async (event) => {
 };
 
 async function onMessage(m) {
+  // Admin premium emoji pathale tar custom emoji ID reply dibe
+  if (m.entities && isAdmin(m.from.id)) {
+    const ids = m.entities.filter((e) => e.type === 'custom_emoji').map((e) => e.custom_emoji_id);
+    if (ids.length) return send(m.chat.id, ids.join('\n'));
+  }
+
   if (!m.text || m.chat.type !== 'private') return;
   const text = m.text.trim();
   const refMatch = text.match(/^\/start ref_(\d+)/);
@@ -90,7 +104,7 @@ async function onMessage(m) {
     await setState(user.id, null);
     if (act === 'lang') return send(m.chat.id, L[l].chooseLang, { reply_markup: langKb });
     if (act === 'bal') return send(m.chat.id, L[l].bal(fmt(user.balance), fmt(user.total_earned), fmt(user.total_withdrawn)),
-      { reply_markup: { inline_keyboard: [[{ text: L[l].withdraw, callback_data: 'wd' }]] } });
+      { reply_markup: { inline_keyboard: [[{ text: L[l].withdraw, callback_data: 'wd', style: 'success' }]] } });
     if (act === 'tasks') return showTasks(m.chat.id, user, l);
     if (act === 'ref') {
       const { count } = await sb.from('users').select('id', { count: 'exact', head: true }).eq('referred_by', user.id);
@@ -98,7 +112,7 @@ async function onMessage(m) {
     }
     if (act === 'sup') {
       const link = (await setting('support_link')) || 'https://t.me';
-      return send(m.chat.id, L[l].sup, { reply_markup: { inline_keyboard: [[{ text: L[l].supBtn, url: link }]] } });
+      return send(m.chat.id, L[l].sup, { reply_markup: { inline_keyboard: [[{ text: L[l].supBtn, url: link, style: 'primary' }]] } });
     }
   }
 
@@ -114,7 +128,10 @@ async function onMessage(m) {
     const data = { ...user.state_data, amount: amt };
     await setState(user.id, 'w_confirm', data);
     return send(m.chat.id, L[l].confirm(data.uid, fmt(amt)),
-      { reply_markup: { inline_keyboard: [[{ text: L[l].btnConfirm, callback_data: 'wc' }, { text: L[l].btnCancel, callback_data: 'wx' }]] } });
+      { reply_markup: { inline_keyboard: [[
+        { text: L[l].btnConfirm, callback_data: 'wc', style: 'success' },
+        { text: L[l].btnCancel, callback_data: 'wx', style: 'danger' }
+      ]] } });
   }
 }
 
@@ -125,8 +142,8 @@ async function showTasks(chat, user, l) {
   const open = (tasks || []).filter((t) => !doneIds.has(t.id));
   if (!open.length) return send(chat, L[l].noTasks);
   const rows = open.map((t) => [
-    { text: `${t.title} (+$${t.reward})`, url: t.link },
-    { text: L[l].check, callback_data: `chk:${t.id}` }
+    { text: `${t.title} (+$${t.reward})`, url: t.link, style: 'primary' },
+    { text: L[l].check, callback_data: `chk:${t.id}`, style: 'success' }
   ]);
   return send(chat, L[l].tasksTitle, { reply_markup: { inline_keyboard: rows } });
 }
@@ -144,7 +161,7 @@ async function onCallback(q) {
     const min = Number(await setting('min_withdraw'));
     if (Number(user.balance) < min || Number(user.balance) <= 0) return send(chat, L[l].insufficient(fmt(user.balance)));
     if (!user.device_verified) {
-      return send(chat, L[l].verifyNeeded, { reply_markup: { inline_keyboard: [[{ text: L[l].verifyBtn, web_app: { url: `${process.env.SITE_URL}/verify.html?lang=${l}` } }]] } });
+      return send(chat, L[l].verifyNeeded, { reply_markup: { inline_keyboard: [[{ text: L[l].verifyBtn, web_app: { url: `${process.env.SITE_URL}/verify.html?lang=${l}` }, style: 'primary' }]] } });
     }
     await setState(user.id, 'w_uid');
     return send(chat, L[l].sendUid);
@@ -161,7 +178,7 @@ async function onCallback(q) {
     await send(chat, L[l].submitted);
     for (const a of ADMINS) {
       await send(a, `💸 Withdrawal #${wid}\nUser: ${user.id} @${user.username || '-'}\nMethod: Binance UID\nUID: ${uid}\nAmount: $${fmt(amount)} USDT`,
-        { reply_markup: { inline_keyboard: [[{ text: '✅ Approve', callback_data: `ok:${wid}` }, { text: '❌ Reject', callback_data: `no:${wid}` }]] } });
+        { reply_markup: { inline_keyboard: approveRow(wid) } });
     }
     return;
   }
@@ -220,7 +237,7 @@ async function adminCmd(m, text) {
     const { data } = await sb.from('withdrawals').select('*').eq('status', 'pending').order('id').limit(20);
     if (!data || !data.length) return send(c, 'No pending withdrawals');
     for (const w of data) await send(c, `💸 #${w.id} User ${w.user_id}\nUID: ${w.account}\nAmount: $${fmt(w.amount)}`,
-      { reply_markup: { inline_keyboard: [[{ text: '✅ Approve', callback_data: `ok:${w.id}` }, { text: '❌ Reject', callback_data: `no:${w.id}` }]] } });
+      { reply_markup: { inline_keyboard: approveRow(w.id) } });
     return;
   }
   if (cmd === '/broadcast') {
