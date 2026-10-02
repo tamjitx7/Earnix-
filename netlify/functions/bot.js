@@ -1,5 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const { L, LANGS } = require('./i18n');
+const { EM, fx, plain, parseBtn, taskIcon } = require('./emoji');
 
 const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const API = `https://api.telegram.org/bot${process.env.BOT_TOKEN}`;
@@ -7,9 +8,27 @@ const ADMINS = (process.env.ADMIN_IDS || '').split(',').map((s) => s.trim()).fil
 const BOT_USERNAME = process.env.BOT_USERNAME || 'earnix_ubot';
 const isAdmin = (id) => ADMINS.includes(String(id));
 
+// ---------- Telegram calls (premium emoji reject hole auto normal emoji diye retry) ----------
 const tg = (method, p) =>
   fetch(`${API}/${method}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) }).then((r) => r.json());
-const send = (chat_id, text, extra = {}) => tg('sendMessage', { chat_id, text, disable_web_page_preview: true, ...extra });
+const strip = (b) => {
+  const c = JSON.parse(JSON.stringify(b, (k, v) => (k === 'icon_custom_emoji_id' ? undefined : v)));
+  delete c.entities;
+  return c;
+};
+async function call(method, body) {
+  const r = await tg(method, body);
+  if (r.ok || r.error_code !== 400 || /not modified|not found|can't be edited/i.test(r.description || '')) return r;
+  return tg(method, strip(body));
+}
+function send(chat_id, text, extra = {}) {
+  const f = fx(text);
+  return call('sendMessage', { chat_id, text: f.text, ...(f.entities.length ? { entities: f.entities } : {}), disable_web_page_preview: true, ...extra });
+}
+function edit(chat_id, message_id, text, extra = {}) {
+  const f = fx(text);
+  return call('editMessageText', { chat_id, message_id, text: f.text, ...(f.entities.length ? { entities: f.entities } : {}), disable_web_page_preview: true, ...extra });
+}
 const fmt = (n) => Number(n).toFixed(4);
 
 async function setting(key) {
@@ -18,44 +37,46 @@ async function setting(key) {
 }
 const setState = (id, state, data = null) => sb.from('users').update({ state, state_data: data }).eq('id', id);
 
-// ---------- Extra user texts (promo / maintenance) ----------
+// ---------- Buttons ----------
+// Button text-er shurute {{token}} likhle oita button icon hoy
+function mkBtn(text, extra, style) {
+  const p = parseBtn(text);
+  return { text: p.text, ...extra, ...(style ? { style } : {}), ...(p.icon ? { icon_custom_emoji_id: p.icon } : {}) };
+}
+const btn = (text, data, style) => mkBtn(text, { callback_data: data }, style);
+const ubtn = (text, url, style) => mkBtn(text, { url }, style);
+const approveRow = (id) => [[btn('{{verified}} Approve', `ok:${id}`, 'success'), btn('{{cancel}} Reject', `no:${id}`, 'danger')]];
+
+// ---------- Extra user texts ----------
 const X = {
-  en: { maint: '🛠 The bot is under maintenance. Please try again later.', wdOff: '⛔ Withdrawals are temporarily disabled.',
-    promoUsage: 'Send: /promo YOURCODE', promoOk: (r) => `🎉 Promo code applied! +$${r}`, promoBad: '❌ Invalid promo code.',
-    promoUsed: '❌ You already used this code.', promoEnd: '❌ This promo code has reached its limit.' },
-  ar: { maint: '🛠 البوت قيد الصيانة. حاول مرة أخرى لاحقاً.', wdOff: '⛔ السحب متوقف مؤقتاً.',
-    promoUsage: 'أرسل: /promo الكود', promoOk: (r) => `🎉 تم تطبيق الكود! +$${r}`, promoBad: '❌ كود غير صالح.',
-    promoUsed: '❌ لقد استخدمت هذا الكود مسبقاً.', promoEnd: '❌ وصل هذا الكود إلى حده الأقصى.' },
-  ru: { maint: '🛠 Бот на техническом обслуживании. Попробуйте позже.', wdOff: '⛔ Вывод временно отключён.',
-    promoUsage: 'Отправьте: /promo КОД', promoOk: (r) => `🎉 Промокод применён! +$${r}`, promoBad: '❌ Неверный промокод.',
-    promoUsed: '❌ Вы уже использовали этот код.', promoEnd: '❌ Лимит этого промокода исчерпан.' }
+  en: { maint: '{{warn}} The bot is under maintenance. Please try again later.', wdOff: '{{stop}} Withdrawals are temporarily disabled.',
+    promoUsage: '{{gift}} Send: /promo YOURCODE', promoOk: (r) => `{{gift}} Promo code applied! +$${r}`, promoBad: '{{warn}} Invalid promo code.',
+    promoUsed: '{{stop}} You already used this code.', promoEnd: '{{stop}} This promo code has reached its limit.' },
+  ar: { maint: '{{warn}} البوت قيد الصيانة. حاول مرة أخرى لاحقاً.', wdOff: '{{stop}} السحب متوقف مؤقتاً.',
+    promoUsage: '{{gift}} أرسل: /promo الكود', promoOk: (r) => `{{gift}} تم تطبيق الكود! +$${r}`, promoBad: '{{warn}} كود غير صالح.',
+    promoUsed: '{{stop}} لقد استخدمت هذا الكود مسبقاً.', promoEnd: '{{stop}} وصل هذا الكود إلى حده الأقصى.' },
+  ru: { maint: '{{warn}} Бот на техническом обслуживании. Попробуйте позже.', wdOff: '{{stop}} Вывод временно отключён.',
+    promoUsage: '{{gift}} Отправьте: /promo КОД', promoOk: (r) => `{{gift}} Промокод применён! +$${r}`, promoBad: '{{warn}} Неверный промокод.',
+    promoUsed: '{{stop}} Вы уже использовали этот код.', promoEnd: '{{stop}} Лимит этого промокода исчерпан.' }
 };
 
-// ---------- Keyboard (color / premium emoji) ----------
-// Premium emoji ID gulo (string hishebe). Faka rakhle icon ashbe na.
-const EMOJI = {
-  bal: '5445353829304387411',
-  tasks: '5436182278831103936',
-  ref: '4909043075529048789',
-  sup: '5307746710682869587',
-  lang: '6017109689748164760'
-};
+// ---------- Main keyboard ----------
+const ICON = { bal: 'wallet', tasks: 'tasks', ref: 'follow', sup: 'support', lang: 'lang' };
 // primary = blue, success = green, danger = red
 const STYLE = { bal: 'primary', tasks: 'success', ref: 'success', sup: 'danger', lang: 'primary' };
-const ADMIN_BTN = '🛠 Admin Panel';
-const mk = (l, k) => {
-  const b = { text: L[l].btn[k], style: STYLE[k] };
-  if (EMOJI[k]) b.icon_custom_emoji_id = EMOJI[k];
-  return b;
-};
+const mk = (l, k) => ({ text: L[l].btn[k], style: STYLE[k], icon_custom_emoji_id: EM[ICON[k]][0] });
 const menuKb = (l, adm) => {
   const last = [mk(l, 'lang')];
-  if (adm) last.push({ text: ADMIN_BTN, style: 'primary' });
+  if (adm) last.push({ text: 'Admin Panel', style: 'primary', icon_custom_emoji_id: EM.lock[0] });
   return { keyboard: [[mk(l, 'bal'), mk(l, 'tasks')], [mk(l, 'ref'), mk(l, 'sup')], last], resize_keyboard: true };
 };
-const langKb = { keyboard: LANGS.map((k) => [{ text: L[k].name }]), resize_keyboard: true, one_time_keyboard: true };
 
-// emoji/symbol bad diye shudhu letter-number milay (purano emoji-wala keyboard-o kaj korbe)
+// ---------- Language picker (inline, 3 colors, vertical) ----------
+const CHOOSE = '{{lang}} Choose your language / اختر لغتك / Выберите язык';
+const LANG_STYLE = ['primary', 'success', 'danger']; // blue, green, red
+const langInline = () => ({ inline_keyboard: LANGS.map((k, i) => [btn(L[k].name, `lg:${k}`, LANG_STYLE[i])]) });
+
+// emoji/symbol bad diye shudhu letter-number milay
 const norm = (s) => String(s).replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
 function actionOf(text) {
   const t = norm(text);
@@ -63,10 +84,7 @@ function actionOf(text) {
   for (const k of LANGS) for (const [a, label] of Object.entries(L[k].btn)) if (norm(label) === t) return a;
   return null;
 }
-const langOf = (text) => LANGS.find((k) => L[k].name === text);
-
-const btn = (text, data, style) => ({ text, callback_data: data, ...(style ? { style } : {}) });
-const approveRow = (id) => [[btn('✅ Approve', `ok:${id}`, 'success'), btn('❌ Reject', `no:${id}`, 'danger')]];
+const cleanTitle = (s) => String(s).replace(/^[^\p{L}\p{N}]+/u, '');
 
 async function getUser(from, ref) {
   let { data: u } = await sb.from('users').select('*').eq('id', from.id).maybeSingle();
@@ -106,7 +124,7 @@ async function onMessage(m) {
   // Admin premium emoji pathale tar custom emoji ID reply dibe
   if (m.entities && isAdmin(m.from.id)) {
     const ids = m.entities.filter((e) => e.type === 'custom_emoji').map((e) => e.custom_emoji_id);
-    if (ids.length) return send(m.chat.id, ids.join('\n'));
+    if (ids.length) return tg('sendMessage', { chat_id: m.chat.id, text: ids.join('\n') });
   }
   if (!m.text || m.chat.type !== 'private') return;
   const text = m.text.trim();
@@ -118,17 +136,13 @@ async function onMessage(m) {
   if (!adm && (await setting('maintenance')) === 'on') return send(m.chat.id, X[l].maint);
 
   if (text.startsWith('/start') || !user.lang) {
-    if (!user.lang && langOf(text)) { /* language set niche hobe */ }
-    else { await setState(user.id, null); return user.lang ? send(m.chat.id, L[l].welcome, { reply_markup: menuKb(l, adm) }) : send(m.chat.id, L.en.chooseLang, { reply_markup: langKb }); }
-  }
-  const picked = langOf(text);
-  if (picked) {
-    await sb.from('users').update({ lang: picked, state: null }).eq('id', user.id);
-    return send(m.chat.id, L[picked].welcome, { reply_markup: menuKb(picked, adm) });
+    await setState(user.id, null);
+    if (user.lang) return send(m.chat.id, L[l].welcome, { reply_markup: menuKb(l, adm) });
+    return send(m.chat.id, CHOOSE, { reply_markup: langInline() });
   }
 
   if (adm) {
-    if (text === '/admin' || text === ADMIN_BTN || text === '/cancel') { await setState(user.id, null); return adminHome(m.chat.id); }
+    if (text === '/admin' || text === '/cancel' || norm(text) === 'adminpanel') { await setState(user.id, null); return adminHome(m.chat.id); }
     if (user.state && user.state.startsWith('a_') && !actionOf(text) && !text.startsWith('/')) return adminInput(m, user);
   }
 
@@ -144,7 +158,7 @@ async function onMessage(m) {
   const act = actionOf(text);
   if (act) {
     await setState(user.id, null);
-    if (act === 'lang') return send(m.chat.id, L[l].chooseLang, { reply_markup: langKb });
+    if (act === 'lang') return send(m.chat.id, CHOOSE, { reply_markup: langInline() });
     if (act === 'bal') return send(m.chat.id, L[l].bal(fmt(user.balance), fmt(user.total_earned), fmt(user.total_withdrawn)),
       { reply_markup: { inline_keyboard: [[btn(L[l].withdraw, 'wd', 'success')]] } });
     if (act === 'tasks') return showTasks(m.chat.id, user, l);
@@ -154,7 +168,7 @@ async function onMessage(m) {
     }
     if (act === 'sup') {
       const link = (await setting('support_link')) || 'https://t.me';
-      return send(m.chat.id, L[l].sup, { reply_markup: { inline_keyboard: [[{ text: L[l].supBtn, url: link, style: 'primary' }]] } });
+      return send(m.chat.id, L[l].sup, { reply_markup: { inline_keyboard: [[ubtn(L[l].supBtn, link, 'primary')]] } });
     }
   }
 
@@ -181,7 +195,7 @@ async function showTasks(chat, user, l) {
   const open = (tasks || []).filter((t) => !doneIds.has(t.id));
   if (!open.length) return send(chat, L[l].noTasks);
   const rows = open.map((t) => [
-    { text: `${t.title} (+$${t.reward})`, url: t.link, style: 'primary' },
+    ubtn(`{{${taskIcon(t)}}} ${cleanTitle(t.title)} (+$${t.reward})`, t.link, 'primary'),
     btn(L[l].check, `chk:${t.id}`, 'success')
   ]);
   return send(chat, L[l].tasksTitle, { reply_markup: { inline_keyboard: rows } });
@@ -193,8 +207,16 @@ async function onCallback(q) {
   const l = user.lang || 'en';
   const chat = q.message.chat.id;
   const d = q.data;
-  const ack = (text) => tg('answerCallbackQuery', { callback_query_id: q.id, text, show_alert: !!text });
+  const ack = (text) => tg('answerCallbackQuery', { callback_query_id: q.id, ...(text ? { text: plain(text), show_alert: true } : {}) });
 
+  if (d.startsWith('lg:')) {
+    const k = d.slice(3);
+    if (!L[k]) return ack();
+    await ack();
+    await sb.from('users').update({ lang: k, state: null }).eq('id', user.id);
+    await tg('deleteMessage', { chat_id: chat, message_id: q.message.message_id });
+    return send(chat, L[k].welcome, { reply_markup: menuKb(k, isAdmin(user.id)) });
+  }
   if (d.startsWith('a:')) {
     if (!isAdmin(q.from.id)) return ack();
     await ack();
@@ -208,7 +230,7 @@ async function onCallback(q) {
     const min = Number(await setting('min_withdraw'));
     if (Number(user.balance) < min || Number(user.balance) <= 0) return send(chat, L[l].insufficient(fmt(user.balance)));
     if (!user.device_verified) {
-      return send(chat, L[l].verifyNeeded, { reply_markup: { inline_keyboard: [[{ text: L[l].verifyBtn, web_app: { url: `${process.env.SITE_URL}/verify.html?lang=${l}` }, style: 'primary' }]] } });
+      return send(chat, L[l].verifyNeeded, { reply_markup: { inline_keyboard: [[mkBtn(L[l].verifyBtn, { web_app: { url: `${process.env.SITE_URL}/verify.html?lang=${l}` } }, 'primary')]] } });
     }
     await setState(user.id, 'w_uid');
     return send(chat, L[l].sendUid);
@@ -224,7 +246,7 @@ async function onCallback(q) {
     if (error) return send(chat, L[l].insufficient(fmt(user.balance)));
     await send(chat, L[l].submitted);
     for (const a of ADMINS) {
-      await send(a, `💸 Withdrawal #${wid}\nUser: ${user.id} @${user.username || '-'}\nMethod: Binance UID\nUID: ${uid}\nAmount: $${fmt(amount)} USDT`,
+      await send(a, `{{bell}} Withdrawal #${wid}\n{{profile}} User: ${user.id} @${user.username || '-'}\nMethod: {{binance}} Binance UID\nUID: ${uid}\n{{money}} Amount: $${fmt(amount)} USDT`,
         { reply_markup: { inline_keyboard: approveRow(wid) } });
     }
     return;
@@ -254,7 +276,7 @@ async function onCallback(q) {
     const { data: wu } = await sb.from('users').select('lang').eq('id', w.user_id).single();
     const wl = (wu && wu.lang) || 'en';
     await send(w.user_id, approve ? L[wl].approved(fmt(w.amount)) : L[wl].rejected(fmt(w.amount)));
-    return tg('editMessageText', { chat_id: chat, message_id: q.message.message_id, text: `${q.message.text}\n\n${approve ? '✅ APPROVED' : '❌ REJECTED'}` });
+    return edit(chat, q.message.message_id, `${q.message.text}\n\n${approve ? '{{verified}} APPROVED' : '{{cancel}} REJECTED'}`);
   }
   return ack();
 }
@@ -263,22 +285,22 @@ async function onCallback(q) {
 async function show(chat, mid, text, kb) {
   const markup = { inline_keyboard: kb };
   if (mid) {
-    const r = await tg('editMessageText', { chat_id: chat, message_id: mid, text, reply_markup: markup, disable_web_page_preview: true });
+    const r = await edit(chat, mid, text, { reply_markup: markup });
     if (r.ok || /not modified/i.test(r.description || '')) return r;
   }
   return send(chat, text, { reply_markup: markup });
 }
 const BACK = [btn('⬅️ Back', 'a:home')];
-const askMsg = (c, text) => send(c, text, { reply_markup: { inline_keyboard: [[btn('✖ Cancel', 'a:x', 'danger')]] } });
+const askMsg = (c, text) => send(c, text, { reply_markup: { inline_keyboard: [[btn('{{cancel}} Cancel', 'a:x', 'danger')]] } });
 const countOf = async (q) => (await q).count || 0;
 
 async function adminHome(chat, mid) {
   const pend = await countOf(sb.from('withdrawals').select('id', { count: 'exact', head: true }).eq('status', 'pending'));
-  return show(chat, mid, '🛠 Admin Panel\n\nChoose a section:', [
-    [btn('📊 Stats', 'a:st', 'primary'), btn('👥 Users', 'a:u', 'primary')],
-    [btn('📋 Tasks', 'a:t', 'primary'), btn(`💸 Withdrawals${pend ? ` (${pend})` : ''}`, 'a:w', pend ? 'success' : 'primary')],
-    [btn('🎟 Promo codes', 'a:p'), btn('📢 Broadcast', 'a:b')],
-    [btn('⚙️ Settings', 'a:s')]
+  return show(chat, mid, '{{info}} Admin Panel\n\nChoose a section:', [
+    [btn('{{uptrend}} Stats', 'a:st', 'primary'), btn('{{profile}} Users', 'a:u', 'primary')],
+    [btn('{{tasks}} Tasks', 'a:t', 'primary'), btn(`{{wallet}} Withdrawals${pend ? ` (${pend})` : ''}`, 'a:w', pend ? 'success' : 'primary')],
+    [btn('{{gift}} Promo codes', 'a:p'), btn('{{announce}} Broadcast', 'a:b')],
+    [btn('{{lock}} Settings', 'a:s')]
   ]);
 }
 
@@ -286,44 +308,44 @@ async function adminStats(c, mid) {
   const { data: s } = await sb.rpc('admin_stats');
   const lg = s.langs || {};
   return show(c, mid,
-    `📊 Stats\n\n👥 Users: ${s.users} (today +${s.today})\n🟢 Active 24h: ${s.active24}\n🚫 Banned: ${s.banned}\n🔐 Verified devices: ${s.verified}\n🌐 EN ${lg.en || 0} · AR ${lg.ar || 0} · RU ${lg.ru || 0}\n\n` +
-    `💰 Users' balances: $${fmt(s.balances)}\n📈 Total earned: $${fmt(s.earned)}\n💸 Total paid: $${fmt(s.paid)}\n⏳ Pending: ${s.pending} ($${fmt(s.pending_amt)})\n\n✅ Task completions: ${s.tasks_done}\n👥 Referred users: ${s.refs}`,
+    `{{uptrend}} Stats\n\n{{profile}} Users: ${s.users} (today +${s.today})\n{{live}} Active 24h: ${s.active24}\n{{stop}} Banned: ${s.banned}\n{{lock}} Verified devices: ${s.verified}\n{{lang}} EN ${lg.en || 0} · AR ${lg.ar || 0} · RU ${lg.ru || 0}\n\n` +
+    `{{money}} Users' balances: $${fmt(s.balances)}\n{{uptrend}} Total earned: $${fmt(s.earned)}\n{{wallet}} Total paid: $${fmt(s.paid)}\n{{time}} Pending: ${s.pending} ($${fmt(s.pending_amt)})\n\n{{verified}} Task completions: ${s.tasks_done}\n{{follow}} Referred users: ${s.refs}`,
     [[btn('🔄 Refresh', 'a:st', 'primary')], BACK]);
 }
 
 async function adminTasks(c, mid) {
   const { data } = await sb.from('tasks').select('*').order('id');
-  const rows = (data || []).map((t) => [btn(`${t.active ? '🟢' : '⏸'} #${t.id} ${t.title} ($${t.reward})`.slice(0, 60), `a:t:${t.id}`)]);
+  const rows = (data || []).map((t) => [btn(`{{${taskIcon(t)}}} ${t.active ? '' : '(off) '}#${t.id} ${cleanTitle(t.title).slice(0, 30)} ($${t.reward})`, `a:t:${t.id}`)]);
   rows.push([btn('➕ Add task', 'a:ta', 'success')], BACK);
-  return show(c, mid, `📋 Tasks (${(data || []).length})\n\nTap a task to edit it.`, rows);
+  return show(c, mid, `{{tasks}} Tasks (${(data || []).length})\n\nTap a task to edit it.`, rows);
 }
 
 async function adminTask(c, mid, id) {
   const { data: t } = await sb.from('tasks').select('*').eq('id', id).maybeSingle();
-  if (!t) return show(c, mid, '❌ Task not found', [[btn('⬅️ Back', 'a:t')]]);
+  if (!t) return show(c, mid, '{{warn}} Task not found', [[btn('⬅️ Back', 'a:t')]]);
   const done = await countOf(sb.from('user_tasks').select('user_id', { count: 'exact', head: true }).eq('task_id', id));
   const rows = [
     [btn(t.active ? '⏸ Turn off' : '▶️ Turn on', `a:tt:${id}`, t.active ? undefined : 'success')],
-    [btn('✏️ Title', `a:te:title:${id}`), btn('🔗 Link', `a:te:link:${id}`)],
-    [btn('💰 Reward', `a:te:reward:${id}`)].concat(t.type === 'channel' ? [btn('📢 Channel', `a:te:chat_id:${id}`)] : []),
-    [btn('🗑 Delete', `a:td:${id}`, 'danger')],
+    [btn('✏️ Title', `a:te:title:${id}`), btn('{{pin}} Link', `a:te:link:${id}`)],
+    [btn('{{money}} Reward', `a:te:reward:${id}`)].concat(t.type === 'channel' ? [btn('{{telegram}} Channel', `a:te:chat_id:${id}`)] : []),
+    [btn('{{trash}} Delete', `a:td:${id}`, 'danger')],
     [btn('⬅️ Back', 'a:t')]
   ];
   return show(c, mid,
-    `📋 Task #${id}\n\nType: ${t.type}\nTitle: ${t.title}\nLink: ${t.link}\n${t.type === 'channel' ? `Channel: ${t.chat_id || '-'}\n` : ''}Reward: $${t.reward}\nStatus: ${t.active ? '🟢 active' : '⏸ off'}\nCompleted by: ${done} users`, rows);
+    `{{${taskIcon(t)}}} Task #${id}\n\nType: ${t.type}\nTitle: ${t.title}\nLink: ${t.link}\n${t.type === 'channel' ? `Channel: ${t.chat_id || '-'}\n` : ''}Reward: $${t.reward}\nStatus: ${t.active ? 'active' : 'off'}\nCompleted by: ${done} users`, rows);
 }
 
 async function adminUser(c, mid, uid) {
   const { data: u } = await sb.from('users').select('*').eq('id', uid).maybeSingle();
-  if (!u) return show(c, mid, '❌ User not found', [[btn('⬅️ Back', 'a:u')]]);
+  if (!u) return show(c, mid, '{{warn}} User not found', [[btn('⬅️ Back', 'a:u')]]);
   const refs = await countOf(sb.from('users').select('id', { count: 'exact', head: true }).eq('referred_by', uid));
   const tasks = await countOf(sb.from('user_tasks').select('user_id', { count: 'exact', head: true }).eq('user_id', uid));
   return show(c, mid,
-    `👤 ${u.first_name || '-'} ${u.username ? '@' + u.username : ''}\nID: ${u.id}\nLang: ${u.lang || '-'}\n\n💰 Balance: $${fmt(u.balance)}\n📈 Earned: $${fmt(u.total_earned)}\n💸 Withdrawn: $${fmt(u.total_withdrawn)}\n👥 Referrals: ${refs}${u.referred_by ? ` (invited by ${u.referred_by})` : ''}\n✅ Tasks done: ${tasks}\n🔐 Device: ${u.device_verified ? 'verified' : 'not verified'}\n🚫 Banned: ${u.banned ? 'yes' : 'no'}\n🕒 Joined: ${String(u.created_at).slice(0, 10)}`,
+    `{{profile}} ${u.first_name || '-'} ${u.username ? '@' + u.username : ''}\nID: ${u.id}\nLang: ${u.lang || '-'}\n\n{{money}} Balance: $${fmt(u.balance)}\n{{uptrend}} Earned: $${fmt(u.total_earned)}\n{{wallet}} Withdrawn: $${fmt(u.total_withdrawn)}\n{{follow}} Referrals: ${refs}${u.referred_by ? ` (invited by ${u.referred_by})` : ''}\n{{verified}} Tasks done: ${tasks}\n{{lock}} Device: ${u.device_verified ? 'verified' : 'not verified'}\n{{stop}} Banned: ${u.banned ? 'yes' : 'no'}\n{{time}} Joined: ${String(u.created_at).slice(0, 10)}`,
     [
-      [btn('➕ Add balance', `a:ub:${uid}:+`, 'success'), btn('➖ Remove', `a:ub:${uid}:-`, 'danger')],
-      [btn(u.banned ? '✅ Unban' : '🚫 Ban', `a:ubn:${uid}`, u.banned ? 'success' : 'danger'), btn('🔄 Reset device', `a:ur:${uid}`)],
-      [btn('📩 Message user', `a:um:${uid}`)],
+      [btn('{{money}} Add balance', `a:ub:${uid}:+`, 'success'), btn('➖ Remove', `a:ub:${uid}:-`, 'danger')],
+      [btn(u.banned ? '{{verified}} Unban' : '{{stop}} Ban', `a:ubn:${uid}`, u.banned ? 'success' : 'danger'), btn('🔄 Reset device', `a:ur:${uid}`)],
+      [btn('{{letter}} Message user', `a:um:${uid}`)],
       [btn('⬅️ Back', 'a:u')]
     ]);
 }
@@ -331,25 +353,25 @@ async function adminUser(c, mid, uid) {
 async function adminPromos(c, mid) {
   const { data } = await sb.from('promo_codes').select('*').order('created_at', { ascending: false }).limit(20);
   const rows = (data || []).map((p) => [
-    btn(`${p.active ? '🟢' : '⏸'} ${p.code} · $${p.reward} · ${p.used}/${p.max_uses || '∞'}`, `a:pt:${p.code}`),
-    btn('🗑', `a:pd:${p.code}`, 'danger')
+    btn(`{{gift}} ${p.active ? '' : '(off) '}${p.code} · $${p.reward} · ${p.used}/${p.max_uses || '∞'}`, `a:pt:${p.code}`),
+    btn('{{trash}}', `a:pd:${p.code}`, 'danger')
   ]);
   rows.push([btn('➕ Create code', 'a:pc', 'success')], BACK);
-  return show(c, mid, '🎟 Promo codes\n\nUsers redeem with: /promo CODE\nTap a code to turn it on/off, 🗑 to delete.', rows);
+  return show(c, mid, '{{gift}} Promo codes\n\nUsers redeem with: /promo CODE\nTap a code to turn it on/off, the bin button deletes it.', rows);
 }
 
-const SET_LABELS = { min_withdraw: '💸 Min withdraw', max_withdraw: '💸 Max withdraw', ref_reward: '👥 Referral reward', support_link: '🆘 Support link' };
+const SET_LABELS = { min_withdraw: 'Min withdraw', max_withdraw: 'Max withdraw', ref_reward: 'Referral reward', support_link: 'Support link' };
 async function adminSettings(c, mid) {
   const { data } = await sb.from('settings').select('*');
   const s = Object.fromEntries((data || []).map((r) => [r.key, r.value]));
   const maint = s.maintenance === 'on', wdOn = s.withdraw_enabled !== 'off';
   return show(c, mid,
-    `⚙️ Settings\n\nMin withdraw: $${s.min_withdraw}\nMax withdraw: $${s.max_withdraw}\nReferral reward: $${s.ref_reward}\nSupport link: ${s.support_link}\n\nMaintenance: ${maint ? 'ON 🔴' : 'off'}\nWithdrawals: ${wdOn ? 'enabled' : 'DISABLED 🔴'}`,
+    `{{lock}} Settings\n\nMin withdraw: $${s.min_withdraw}\nMax withdraw: $${s.max_withdraw}\nReferral reward: $${s.ref_reward}\nSupport link: ${s.support_link}\n\nMaintenance: ${maint ? 'ON {{warn}}' : 'off'}\nWithdrawals: ${wdOn ? 'enabled' : 'DISABLED {{warn}}'}`,
     [
-      [btn('💸 Min withdraw', 'a:se:min_withdraw'), btn('💸 Max withdraw', 'a:se:max_withdraw')],
-      [btn('👥 Referral reward', 'a:se:ref_reward'), btn('🆘 Support link', 'a:se:support_link')],
-      [btn(maint ? '🛠 Maintenance: ON (tap to turn off)' : '🛠 Turn on maintenance', 'a:tg:maintenance', maint ? 'danger' : undefined)],
-      [btn(wdOn ? '⛔ Disable withdrawals' : '✅ Enable withdrawals', 'a:tg:withdraw_enabled', wdOn ? undefined : 'success')],
+      [btn('{{money}} Min withdraw', 'a:se:min_withdraw'), btn('{{money}} Max withdraw', 'a:se:max_withdraw')],
+      [btn('{{follow}} Referral reward', 'a:se:ref_reward'), btn('{{support}} Support link', 'a:se:support_link')],
+      [btn(maint ? '{{warn}} Maintenance: ON (tap to turn off)' : '{{warn}} Turn on maintenance', 'a:tg:maintenance', maint ? 'danger' : undefined)],
+      [btn(wdOn ? '{{stop}} Disable withdrawals' : '{{verified}} Enable withdrawals', 'a:tg:withdraw_enabled', wdOn ? undefined : 'success')],
       BACK
     ]);
 }
@@ -362,15 +384,15 @@ async function runBroadcast(c, mid, user, d) {
     const { data } = await q;
     if (!data || !data.length) {
       await setState(user.id, null);
-      return show(c, mid, `✅ Broadcast finished\n\nDelivered: ${d.sent}\nFailed: ${d.failed}`, [BACK]);
+      return show(c, mid, `{{done}} Broadcast finished\n\nDelivered: ${d.sent}\nFailed: ${d.failed}`, [BACK]);
     }
     const res = await Promise.all(data.map((u) => send(u.id, d.text)));
     res.forEach((r) => (r.ok ? d.sent++ : d.failed++));
     d.after = data[data.length - 1].id;
   }
   await setState(user.id, 'a_b_run', d);
-  return show(c, mid, `📢 Sending... ${d.sent + d.failed}/${d.total}\n\nTap Continue to send the next batch.`,
-    [[btn('▶️ Continue', 'a:bc', 'success')], [btn('⛔ Stop', 'a:x', 'danger')]]);
+  return show(c, mid, `{{announce}} Sending... ${d.sent + d.failed}/${d.total}\n\nTap Continue to send the next batch.`,
+    [[btn('▶️ Continue', 'a:bc', 'success')], [btn('{{stop}} Stop', 'a:x', 'danger')]]);
 }
 
 async function adminCb(q, user, path) {
@@ -384,9 +406,9 @@ async function adminCb(q, user, path) {
 
     // ----- Tasks -----
     case 't': return a1 ? adminTask(c, mid, Number(a1)) : adminTasks(c, mid);
-    case 'ta': return show(c, mid, '➕ New task\n\nChoose the type:', [
-      [btn('📢 Join channel (auto-verified)', 'a:tat:channel')], [btn('🔗 Link / X / post', 'a:tat:post')], [btn('🤖 Start bot', 'a:tat:bot')], [btn('⬅️ Back', 'a:t')]]);
-    case 'tat': return ask('a_t_title', { type: a1 }, '✏️ Send the task title (e.g. Follow our X)');
+    case 'ta': return show(c, mid, '{{tasks}} New task\n\nChoose the type:', [
+      [btn('{{telegram}} Join channel (auto-verified)', 'a:tat:channel')], [btn('{{pin}} Link / X / post', 'a:tat:post')], [btn('{{rocket}} Start bot', 'a:tat:bot')], [btn('⬅️ Back', 'a:t')]]);
+    case 'tat': return ask('a_t_title', { type: a1 }, '✏️ Send the task title (e.g. Follow our X)\n\nAn emoji is added automatically from the title.');
     case 'tt': {
       const { data: t } = await sb.from('tasks').select('active').eq('id', Number(a1)).single();
       await sb.from('tasks').update({ active: !t.active }).eq('id', Number(a1));
@@ -395,53 +417,53 @@ async function adminCb(q, user, path) {
     case 'te':
       if (!['title', 'link', 'reward', 'chat_id'].includes(a1)) return;
       return ask('a_te', { field: a1, id: Number(a2) }, `✏️ Send the new ${a1.replace('_', ' ')}`);
-    case 'td': return show(c, mid, `🗑 Delete task #${a1}?`, [[btn('✅ Yes, delete', `a:tdy:${a1}`, 'danger'), btn('Cancel', `a:t:${a1}`)]]);
+    case 'td': return show(c, mid, `{{trash}} Delete task #${a1}?`, [[btn('{{verified}} Yes, delete', `a:tdy:${a1}`, 'danger'), btn('{{cancel}} Cancel', `a:t:${a1}`)]]);
     case 'tdy': await sb.from('tasks').delete().eq('id', Number(a1)); return adminTasks(c, mid);
 
     // ----- Users -----
-    case 'u': return show(c, mid, '👥 Users', [[btn('🔎 Find user', 'a:uf', 'primary')], [btn('🏆 Top referrers', 'a:ut'), btn('💎 Top earners', 'a:ue')], BACK]);
+    case 'u': return show(c, mid, '{{profile}} Users', [[btn('{{profile}} Find user', 'a:uf', 'primary')], [btn('{{follow}} Top referrers', 'a:ut'), btn('{{uptrend}} Top earners', 'a:ue')], BACK]);
     case 'uf': return ask('a_u_find', {}, '🔎 Send the user ID or @username');
     case 'ut': {
       const { data } = await sb.rpc('top_referrers', { n: 10 });
       const txt = (data || []).map((r, i) => `${i + 1}. ${r.username ? '@' + r.username : r.uid} — ${r.refs} referrals`).join('\n') || 'No referrals yet.';
-      return show(c, mid, `🏆 Top referrers\n\n${txt}`, [[btn('⬅️ Back', 'a:u')]]);
+      return show(c, mid, `{{follow}} Top referrers\n\n${txt}`, [[btn('⬅️ Back', 'a:u')]]);
     }
     case 'ue': {
       const { data } = await sb.from('users').select('id,username,total_earned').order('total_earned', { ascending: false }).limit(10);
       const txt = (data || []).map((r, i) => `${i + 1}. ${r.username ? '@' + r.username : r.id} — $${fmt(r.total_earned)}`).join('\n') || 'No users yet.';
-      return show(c, mid, `💎 Top earners\n\n${txt}`, [[btn('⬅️ Back', 'a:u')]]);
+      return show(c, mid, `{{uptrend}} Top earners\n\n${txt}`, [[btn('⬅️ Back', 'a:u')]]);
     }
     case 'uc': return adminUser(c, mid, Number(a1));
-    case 'ub': return ask('a_u_bal', { uid: Number(a1), sign: a2 }, `${a2 === '+' ? '➕ Add' : '➖ Remove'} balance: send the amount in USDT`);
+    case 'ub': return ask('a_u_bal', { uid: Number(a1), sign: a2 }, `{{money}} ${a2 === '+' ? 'Add' : 'Remove'} balance: send the amount in USDT`);
     case 'ubn': {
       const { data: u } = await sb.from('users').select('banned').eq('id', Number(a1)).single();
       await sb.from('users').update({ banned: !u.banned }).eq('id', Number(a1));
       return adminUser(c, mid, Number(a1));
     }
     case 'ur': await sb.from('users').update({ device_verified: false, device_hash: null }).eq('id', Number(a1)); return adminUser(c, mid, Number(a1));
-    case 'um': return ask('a_u_msg', { uid: Number(a1) }, '📩 Send the message for this user');
+    case 'um': return ask('a_u_msg', { uid: Number(a1) }, '{{letter}} Send the message for this user');
 
     // ----- Withdrawals -----
     case 'w': {
       const p = await countOf(sb.from('withdrawals').select('id', { count: 'exact', head: true }).eq('status', 'pending'));
-      return show(c, mid, `💸 Withdrawals\n\nPending: ${p}`, [[btn(`⏳ Pending (${p})`, 'a:wp', 'success')], [btn('📜 History', 'a:wh')], BACK]);
+      return show(c, mid, `{{wallet}} Withdrawals\n\nPending: ${p}`, [[btn(`{{time}} Pending (${p})`, 'a:wp', 'success')], [btn('{{pin}} History', 'a:wh')], BACK]);
     }
     case 'wp': {
       const { data } = await sb.from('withdrawals').select('*').eq('status', 'pending').order('id').limit(10);
-      if (!data || !data.length) return send(c, '✅ No pending withdrawals.');
-      for (const w of data) await send(c, `💸 #${w.id} · User ${w.user_id}\nUID: ${w.account}\nAmount: $${fmt(w.amount)}`, { reply_markup: { inline_keyboard: approveRow(w.id) } });
+      if (!data || !data.length) return send(c, '{{done}} No pending withdrawals.');
+      for (const w of data) await send(c, `{{bell}} #${w.id} · User ${w.user_id}\n{{binance}} UID: ${w.account}\n{{money}} Amount: $${fmt(w.amount)}`, { reply_markup: { inline_keyboard: approveRow(w.id) } });
       return;
     }
     case 'wh': {
       const { data } = await sb.from('withdrawals').select('*').order('id', { ascending: false }).limit(15);
-      const ic = { pending: '⏳', approved: '✅', rejected: '❌' };
+      const ic = { pending: '{{time}}', approved: '{{done}}', rejected: '{{cancel}}' };
       const txt = (data || []).map((w) => `${ic[w.status]} #${w.id} · ${w.user_id} · $${fmt(w.amount)}`).join('\n') || 'Nothing yet.';
-      return show(c, mid, `📜 Last withdrawals\n\n${txt}`, [[btn('⬅️ Back', 'a:w')]]);
+      return show(c, mid, `{{pin}} Last withdrawals\n\n${txt}`, [[btn('⬅️ Back', 'a:w')]]);
     }
 
     // ----- Promo -----
     case 'p': return adminPromos(c, mid);
-    case 'pc': return ask('a_p', {}, '🎟 Send: CODE REWARD MAXUSES\nExample: WELCOME 0.5 100\n(MAXUSES 0 = unlimited)');
+    case 'pc': return ask('a_p', {}, '{{gift}} Send: CODE REWARD MAXUSES\nExample: WELCOME 0.5 100\n(MAXUSES 0 = unlimited)');
     case 'pt': {
       const { data: p } = await sb.from('promo_codes').select('active').eq('code', a1).single();
       await sb.from('promo_codes').update({ active: !p.active }).eq('code', a1);
@@ -450,7 +472,7 @@ async function adminCb(q, user, path) {
     case 'pd': await sb.from('promo_codes').delete().eq('code', a1); return adminPromos(c, mid);
 
     // ----- Broadcast -----
-    case 'b': return ask('a_b_text', {}, '📢 Send the broadcast message text');
+    case 'b': return ask('a_b_text', {}, '{{announce}} Send the broadcast message text\n\nTip: {{fire}} likhle premium emoji hoye jabe. Token list: money wallet uptrend profile gift fire rocket p100 soon lock time bell pin announce telegram live chat verified done warn stop info');
     case 'bt': case 'bc': {
       let d = user.state_data || {};
       if (sec === 'bt') {
@@ -485,29 +507,29 @@ async function adminInput(m, user) {
   switch (user.state) {
     case 'a_t_title':
       await setState(user.id, 'a_t_link', { ...d, title: text });
-      return askMsg(c, '🔗 Send the task link (https://...)');
+      return askMsg(c, '{{pin}} Send the task link (https://...)');
     case 'a_t_link':
-      if (!/^https?:\/\//i.test(text)) return send(c, '❌ Link must start with https://');
+      if (!/^https?:\/\//i.test(text)) return send(c, '{{warn}} Link must start with https://');
       if (d.type === 'channel') {
         await setState(user.id, 'a_t_chat', { ...d, link: text });
-        return askMsg(c, '📢 Send the channel username, e.g. @mychannel\n(The bot must be an admin there.)');
+        return askMsg(c, '{{telegram}} Send the channel username, e.g. @mychannel\n(The bot must be an admin there.)');
       }
       await setState(user.id, 'a_t_reward', { ...d, link: text });
-      return askMsg(c, '💰 Send the reward in USDT, e.g. 0.05');
+      return askMsg(c, '{{money}} Send the reward in USDT, e.g. 0.05');
     case 'a_t_chat':
       await setState(user.id, 'a_t_reward', { ...d, chat_id: text });
-      return askMsg(c, '💰 Send the reward in USDT, e.g. 0.05');
+      return askMsg(c, '{{money}} Send the reward in USDT, e.g. 0.05');
     case 'a_t_reward': {
       const r = num(text);
-      if (!isFinite(r) || r < 0) return send(c, '❌ Send a valid number.');
+      if (!isFinite(r) || r < 0) return send(c, '{{warn}} Send a valid number.');
       const { data: t, error } = await sb.from('tasks').insert({ type: d.type, title: d.title, link: d.link, chat_id: d.chat_id || null, reward: r }).select().single();
       await done();
-      if (error) return send(c, `❌ ${error.message}`);
+      if (error) return send(c, `{{warn}} ${error.message}`);
       return adminTask(c, null, t.id);
     }
     case 'a_te': {
       let v = text;
-      if (d.field === 'reward') { v = num(text); if (!isFinite(v) || v < 0) return send(c, '❌ Send a valid number.'); }
+      if (d.field === 'reward') { v = num(text); if (!isFinite(v) || v < 0) return send(c, '{{warn}} Send a valid number.'); }
       await sb.from('tasks').update({ [d.field]: v }).eq('id', d.id);
       await done();
       return adminTask(c, null, d.id);
@@ -516,15 +538,15 @@ async function adminInput(m, user) {
       const key = text.replace('@', '');
       const qb = sb.from('users').select('id').limit(1);
       const { data } = await (/^\d+$/.test(key) ? qb.eq('id', Number(key)) : qb.ilike('username', key));
-      if (!data || !data[0]) return send(c, '❌ User not found. Try again or tap Cancel.');
+      if (!data || !data[0]) return send(c, '{{warn}} User not found. Try again or tap Cancel.');
       await done();
       return adminUser(c, null, data[0].id);
     }
     case 'a_u_bal': {
       const a = num(text);
-      if (!isFinite(a) || a <= 0) return send(c, '❌ Send a positive number.');
+      if (!isFinite(a) || a <= 0) return send(c, '{{warn}} Send a positive number.');
       const { data: u } = await sb.from('users').select('balance').eq('id', d.uid).single();
-      if (d.sign === '-' && a > Number(u.balance)) return send(c, "❌ That's more than the user's balance.");
+      if (d.sign === '-' && a > Number(u.balance)) return send(c, "{{warn}} That's more than the user's balance.");
       await sb.rpc('add_balance', { uid: d.uid, amt: d.sign === '-' ? -a : a, earned: false });
       await done();
       return adminUser(c, null, d.uid);
@@ -532,14 +554,14 @@ async function adminInput(m, user) {
     case 'a_u_msg': {
       const r = await send(d.uid, text);
       await done();
-      await send(c, r.ok ? '✅ Sent.' : '❌ Could not deliver (user may have blocked the bot).');
+      await send(c, r.ok ? '{{done}} Sent.' : '{{warn}} Could not deliver (user may have blocked the bot).');
       return adminUser(c, null, d.uid);
     }
     case 'a_s': {
       let v = text;
       if (['min_withdraw', 'max_withdraw', 'ref_reward'].includes(d.key)) {
         const n = num(text);
-        if (!isFinite(n) || n < 0) return send(c, '❌ Send a valid number.');
+        if (!isFinite(n) || n < 0) return send(c, '{{warn}} Send a valid number.');
         v = String(n);
       }
       await sb.from('settings').upsert({ key: d.key, value: v });
@@ -550,17 +572,17 @@ async function adminInput(m, user) {
       const [code, reward, max] = text.split(/\s+/);
       const cd = (code || '').toUpperCase(), r = num(reward), mx = Number(max || 0);
       if (!/^[A-Z0-9_-]{3,20}$/.test(cd) || !isFinite(r) || r <= 0 || !Number.isInteger(mx) || mx < 0)
-        return send(c, '❌ Format: CODE REWARD MAXUSES\nExample: WELCOME 0.5 100');
+        return send(c, '{{warn}} Format: CODE REWARD MAXUSES\nExample: WELCOME 0.5 100');
       const { error } = await sb.from('promo_codes').insert({ code: cd, reward: r, max_uses: mx });
       await done();
-      if (error) return send(c, '❌ That code already exists.');
+      if (error) return send(c, '{{warn}} That code already exists.');
       return adminPromos(c, null);
     }
     case 'a_b_text':
       await setState(user.id, 'a_b_pick', { text });
-      return send(c, `📢 Preview:\n\n${text}\n\nWho should get it?`, { reply_markup: { inline_keyboard: [
+      return send(c, `{{announce}} Preview:\n\n${text}\n\nWho should get it?`, { reply_markup: { inline_keyboard: [
         [btn('🌍 Everyone', 'a:bt:all', 'success')],
         [btn('🇬🇧 EN', 'a:bt:en'), btn('🇸🇦 AR', 'a:bt:ar'), btn('🇷🇺 RU', 'a:bt:ru')],
-        [btn('✖ Cancel', 'a:x', 'danger')]] } });
+        [btn('{{cancel}} Cancel', 'a:x', 'danger')]] } });
   }
 }
