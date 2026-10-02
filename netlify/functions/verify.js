@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { L } = require('./i18n');
+const { fx } = require('./emoji');
 const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
 function validInitData(initData) {
@@ -13,8 +14,14 @@ function validInitData(initData) {
   if (Date.now() / 1000 - Number(p.get('auth_date')) > 3600) return null;
   return JSON.parse(p.get('user'));
 }
-const tgSend = (chat_id, text) =>
-  fetch(`https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id, text }) });
+
+async function tgSend(chat_id, text) {
+  const f = fx(text);
+  const url = `https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendMessage`;
+  const post = (b) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }).then((r) => r.json());
+  const r = await post({ chat_id, text: f.text, ...(f.entities.length ? { entities: f.entities } : {}) });
+  if (!r.ok && f.entities.length) await post({ chat_id, text: f.text });
+}
 
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return { statusCode: 405 };
