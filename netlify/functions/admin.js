@@ -24,20 +24,26 @@ const SET = {
   withdraw_cooldown_hours: ['Withdraw cooldown (hours, 0 = off)', 'num'],
   ref_reward: ['Referral reward ($ per valid referral)', 'num'],
   task_reset_hours: ['Task reset (hours, 0 = one-time)', 'num'],
-  spam_threshold: ['Spam: unknown messages before an offense', 'int'],
+  task_min_seconds: ['Task: seconds to wait after link click before Check works', 'num'],
+  spam_threshold: ['Spam: button/command presses allowed in the window', 'int'],
+  spam_window_sec: ['Spam: window length (seconds)', 'num'],
   spam_ladder: ['Spam: mute ladder in minutes (e.g. 1,3,5,30)', 'list'],
-  spam_window_min: ['Spam: counting window (minutes)', 'num'],
   spam_decay_hours: ['Spam: forget old offenses after (hours)', 'num']
 };
 const GROUPS = {
   gen: ['{{info}} General', ['support_link'], ['maintenance', 'withdraw_enabled', 'gate_enabled']],
-  wd: ['{{wallet}} Withdraw & rewards', ['min_withdraw', 'max_withdraw', 'withdraw_cooldown_hours', 'ref_reward', 'task_reset_hours'], []],
+  wd: ['{{wallet}} Withdraw, rewards & tasks', ['min_withdraw', 'max_withdraw', 'withdraw_cooldown_hours', 'ref_reward', 'task_reset_hours', 'task_min_seconds'], ['task_click_required']],
   sec: ['{{lock}} Device security', [], []],
-  spam: ['{{stop}} Anti-spam', ['spam_threshold', 'spam_ladder', 'spam_window_min', 'spam_decay_hours'], []]
+  spam: ['{{stop}} Anti-spam', ['spam_threshold', 'spam_window_sec', 'spam_ladder', 'spam_decay_hours'], []]
 };
 const GROUP_OF = {};
 Object.entries(GROUPS).forEach(([g, v]) => v[1].forEach((k) => (GROUP_OF[k] = g)));
-const TOG = { maintenance: ['Maintenance mode', 'off'], withdraw_enabled: ['Withdrawals', 'on'], gate_enabled: ['Force-join', 'on'] };
+const TOG = {
+  maintenance: ['Maintenance mode', 'off'],
+  withdraw_enabled: ['Withdrawals', 'on'],
+  gate_enabled: ['Force-join', 'on'],
+  task_click_required: ['Task link-click required', 'on']
+};
 const MODES = { off: 'OFF (no device check)', token: 'TOKEN (one device/app = one account, recommended)', strict: 'STRICT (token + fingerprint, may block identical phones)' };
 
 // ---------- Screens ----------
@@ -76,7 +82,11 @@ async function taskList(c, mid) {
 async function taskCard(c, mid, id) {
   const { data: tk } = await sb.from('tasks').select('*').eq('id', id).maybeSingle();
   if (!tk) return show(c, mid, '{{warn}} Task not found', [[btn('⬅️ Back', 'a:t')]]);
-  const done = await countOf(sb.from('user_tasks').select('user_id', { count: 'exact', head: true }).eq('task_id', id));
+  const [done, clicks] = await Promise.all([
+    countOf(sb.from('user_tasks').select('user_id', { count: 'exact', head: true }).eq('task_id', id)),
+    countOf(sb.from('task_clicks').select('user_id', { count: 'exact', head: true }).eq('task_id', id))
+  ]);
+  const byClick = !(tk.type === 'channel' && tk.chat_id);
   const rows = [
     [btn(tk.active ? '⏸ Turn off' : '▶️ Turn on', `a:tt:${id}`, tk.active ? undefined : 'success')],
     [btn('✏️ Title', `a:te:title:${id}`), btn('{{pin}} Link', `a:te:link:${id}`)],
@@ -86,7 +96,7 @@ async function taskCard(c, mid, id) {
     [btn('⬅️ Back', 'a:t')]
   ];
   return show(c, mid,
-    `{{${taskIcon(tk)}}} Task #${id}\n\nType: ${tk.type}\nTitle: ${tk.title}\nLink: ${tk.link}\n${tk.type === 'channel' ? `Channel: ${tk.chat_id || '-'}\n` : ''}Reward: $${tk.reward}\nReset: ${resetTxt(tk)}\nStatus: ${tk.active ? 'active' : 'off'}\nCompleted by: ${done} users`, rows);
+    `{{${taskIcon(tk)}}} Task #${id}\n\nType: ${tk.type}\nTitle: ${tk.title}\nLink: ${tk.link}\n${tk.type === 'channel' ? `Channel: ${tk.chat_id || '-'}\n` : ''}Reward: $${tk.reward}\nReset: ${resetTxt(tk)}\nVerify: ${byClick ? ((S('task_click_required') ?? 'on') === 'off' ? 'none (Check = reward)' : `link click + ${S('task_min_seconds') ?? 10}s wait`) : 'channel membership'}\nStatus: ${tk.active ? 'active' : 'off'}\nLink clicks: ${clicks} · Completed by: ${done} users`, rows);
 }
 
 // ----- Force-join gates -----
@@ -250,7 +260,7 @@ const approveRow = (id) => [[btn('{{verified}} Approve', `ok:${id}`, 'success'),
 // ====================== CALLBACKS ======================
 async function cb(q, user, path) {
   const c = q.message.chat.id, mid = q.message.message_id;
-  const [sec, a1, a2, a3] = path.split(':');
+  const [sec, a1, a2] = path.split(':');
   const ask = async (state, data, text) => { await setState(user.id, state, data); return askMsg(c, text); };
 
   switch (sec) {
@@ -260,7 +270,7 @@ async function cb(q, user, path) {
     // ----- Tasks -----
     case 't': return a1 ? taskCard(c, mid, Number(a1)) : taskList(c, mid);
     case 'ta': return show(c, mid, '{{tasks}} New task\n\nChoose the type:', [
-      [btn('{{telegram}} Join channel (auto-verified)', 'a:tat:channel')], [btn('{{pin}} Link / X / post', 'a:tat:post')], [btn('{{rocket}} Start bot', 'a:tat:bot')], [btn('⬅️ Back', 'a:t')]]);
+      [btn('{{telegram}} Join channel (auto-verified)', 'a:tat:channel')], [btn('{{pin}} Link / X / post (link click verified)', 'a:tat:post')], [btn('{{rocket}} Start bot (link click verified)', 'a:tat:bot')], [btn('⬅️ Back', 'a:t')]]);
     case 'tat': return ask('a_t_title', { type: a1 }, '✏️ Send the task title (e.g. Follow our X)\n\nAn emoji is added automatically from the title.');
     case 'tt': {
       const { data: tk } = await sb.from('tasks').select('active').eq('id', Number(a1)).single();
@@ -331,7 +341,7 @@ async function cb(q, user, path) {
     case 'ur': await sb.from('users').update({ device_verified: false, device_hash: null, device_token: null, device_ip: null, dup_flag: null }).eq('id', Number(a1)); return userCard(c, mid, Number(a1));
     case 'um': return ask('a_u_msg', { uid: Number(a1) }, '{{letter}} Send the message for this user');
     case 'udup': return dups(c, mid, Number(a1));
-    case 'uun': await sb.from('users').update({ mute_until: null, spam_count: 0, offenses: 0 }).eq('id', Number(a1)); return userCard(c, mid, Number(a1));
+    case 'uun': await sb.from('users').update({ mute_until: null, spam_count: 0, spam_at: null, offenses: 0 }).eq('id', Number(a1)); return userCard(c, mid, Number(a1));
     case 'utr': await sb.from('user_tasks').delete().eq('user_id', Number(a1)); return userCard(c, mid, Number(a1));
 
     // ----- Withdrawals -----
