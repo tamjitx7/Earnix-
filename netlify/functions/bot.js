@@ -1,5 +1,5 @@
 const C = require('./core');
-const { sb, tg, send, sendRaw, editRaw, ack, show, t, S, btn, ubtn, mkBtn, norm, dur, fmt, cleanTitle, setState, loadCache, isAdmin, BOT_USERNAME, ADMINS, getGates, gateKb, missingGates } = C;
+const { sb, tg, send, sendRaw, editRaw, ack, show, t, S, btn, ubtn, mkBtn, norm, dur, fmt, cleanTitle, setState, loadCache, isAdmin, BOT_USERNAME, ADMINS, getGates, gateKb, missingGates, trackUrl } = C;
 const { EM, fx, plain, parseBtn, taskIcon } = require('./emoji');
 const { T, NAMES, LANGS } = require('./i18n');
 const admin = require('./admin');
@@ -82,19 +82,24 @@ async function entry(chat, user, adm) {
   return welcome(chat, user, adm);
 }
 
-// ---------- Anti-spam ----------
-async function strike(user, chat, l) {
+// ---------- Anti-spam (button / command beshi bar chaple) ----------
+// true return korle: user ke ekhon restrict kora hoyeche, ei action process korbe na
+async function flood(user, chat, l) {
   const now = Date.now();
-  const thr = Number(S('spam_threshold') || 3);
-  const win = Number(S('spam_window_min') || 10) * 60000;
+  const thr = Number(S('spam_threshold') || 10);
+  const win = Number(S('spam_window_sec') || 30) * 1000;
   const decay = Number(S('spam_decay_hours') || 24) * 3600000;
-  const count = user.spam_at && now - new Date(user.spam_at).getTime() < win ? (user.spam_count || 0) + 1 : 1;
-  const upd = { spam_count: count, spam_at: new Date(now).toISOString() };
-  if (count > thr) {
+  const inWin = user.spam_at && now - new Date(user.spam_at).getTime() < win;
+  const count = inWin ? (user.spam_count || 0) + 1 : 1;
+  const upd = { spam_count: count };
+  if (!inWin) upd.spam_at = new Date(now).toISOString();
+  let blocked = false;
+  if (count >= thr) {
+    blocked = true;
     const prev = user.offense_at && now - new Date(user.offense_at).getTime() > decay ? 0 : user.offenses || 0;
     const n = prev + 1;
     const ladder = (S('spam_ladder') || '1,3,5,30').split(',').map(Number).filter((x) => x > 0);
-    Object.assign(upd, { spam_count: 0, offenses: n, offense_at: new Date(now).toISOString() });
+    Object.assign(upd, { spam_count: 0, spam_at: null, offenses: n, offense_at: new Date(now).toISOString() });
     if (n === 1) await send(chat, t(l, 'spamWarn'));
     else if (n - 2 < ladder.length) {
       const mins = ladder[n - 2];
@@ -103,6 +108,8 @@ async function strike(user, chat, l) {
     } else { upd.banned = true; await send(chat, t(l, 'spamBan')); }
   }
   await sb.from('users').update(upd).eq('id', user.id);
+  Object.assign(user, upd);
+  return blocked;
 }
 
 // ---------- Withdraw cooldown ----------
@@ -136,7 +143,7 @@ async function onMessage(m) {
 
   if (user.banned) return send(chat, t(l, 'banned'));
   if (!adm && user.mute_until && new Date(user.mute_until) > new Date()) return;
-  if (!m.text) { if (!adm) await strike(user, chat, l); return; }
+  if (!m.text) return; // sticker, photo etc: kichu hoy na
   if (!adm && S('maintenance') === 'on') return send(chat, t(l, 'maint'));
   const text = raw.trim();
 
@@ -146,13 +153,18 @@ async function onMessage(m) {
     if (ids.length) return sendRaw(chat, ids.join('\n'));
   }
 
+  // Shudhu bot er button / command spam hishab hoy. Onno text kichu kore na.
+  const act = actionOf(text);
+  const counted = !!st || !!act || /^\/promo(\s|$)/.test(text);
+  if (!adm && counted && (await flood(user, chat, l))) return;
+
   if (st) { await setState(user.id, null); return entry(chat, user, adm); }
   if (!user.lang) return entry(chat, user, adm);
   if (await gateBlocked(chat, user, adm)) return;
 
   if (adm) {
     if (text === '/admin' || text === '/cancel' || norm(text) === 'adminpanel') { await setState(user.id, null); return admin.home(chat); }
-    if ((user.state || '').startsWith('a_') && !actionOf(text) && !text.startsWith('/')) return admin.input(m, user);
+    if ((user.state || '').startsWith('a_') && !act && !text.startsWith('/')) return admin.input(m, user);
   }
 
   if (/^\/promo(\s|$)/.test(text)) {
@@ -164,7 +176,6 @@ async function onMessage(m) {
     return send(chat, t(l, n === -3 ? 'promoUsed' : n === -2 ? 'promoEnd' : 'promoBad'));
   }
 
-  const act = actionOf(text);
   if (act) {
     await setState(user.id, null);
     if (act === 'lang') return send(chat, t(l, 'chooseLang'), { reply_markup: langInline() });
@@ -192,11 +203,13 @@ async function onMessage(m) {
     return send(chat, t(l, 'confirm', { uid: data.uid, amount: fmt(amt) }),
       { reply_markup: { inline_keyboard: [[btn(t(l, 'btnConfirm'), 'wc', 'success'), btn(t(l, 'btnCancel'), 'wx', 'danger')]] } });
   }
-
-  if (!adm) await strike(user, chat, l); // bot er baire kichu
+  // bot er baire onno kichu: kono uttor nai, spam-o gona hoy na
 }
 
 // ---------- Tasks ----------
+// Channel task (membership verify) e asol link, baki shob task e click-tracker link
+const taskUrl = (tk, uid) => ((tk.type === 'channel' && tk.chat_id) || S('task_click_required') === 'off' ? tk.link : trackUrl(uid, tk.id));
+
 async function showTasks(chat, user, mid) {
   const l = user.lang;
   const [{ data: tasks }, { data: rows }] = await Promise.all([
@@ -219,7 +232,7 @@ async function showTasks(chat, user, mid) {
   let text = t(l, 'tasksTitle', { total: tasks.length, done: doneN, remaining: open.length, earned: fmt(earned), next: next !== null ? '\n' + t(l, 'tasksNext', { time: dur(next / 1000) }) : '' });
   if (!open.length) text += '\n\n' + t(l, 'tasksNone');
   const kb = open.map((tk) => [
-    ubtn(`{{${taskIcon(tk)}}} ${cleanTitle(tk.title)} (+$${tk.reward})`, tk.link, 'primary'),
+    ubtn(`{{${taskIcon(tk)}}} ${cleanTitle(tk.title)} (+$${tk.reward})`, taskUrl(tk, user.id), 'primary'),
     btn(t(l, 'check'), `chk:${tk.id}`, 'success')
   ]);
   return show(chat, mid, text, kb);
@@ -245,6 +258,7 @@ async function onCallback(q) {
 
   if (!adm && user.mute_until && new Date(user.mute_until) > new Date())
     return A(t(l, 'muted', { time: dur((new Date(user.mute_until).getTime() - Date.now()) / 1000) }));
+  if (!adm && (await flood(user, chat, l))) return A();
 
   if (d.startsWith('lg:')) {
     const k = d.slice(3);
@@ -312,12 +326,30 @@ async function onCallback(q) {
     const id = Number(d.split(':')[1]);
     const { data: tk } = await sb.from('tasks').select('*').eq('id', id).eq('active', true).maybeSingle();
     if (!tk) return A();
+    const rh = tk.reset_hours ?? Number(S('task_reset_hours') ?? 24);
+    const { data: ut } = await sb.from('user_tasks').select('last_done').eq('user_id', user.id).eq('task_id', id).maybeSingle();
+
+    // age check: already done / reset er jonno wait
+    if (ut) {
+      if (rh <= 0) return A(t(l, 'already'));
+      const readyAt = new Date(ut.last_done).getTime() + rh * 3600000;
+      if (Date.now() < readyAt) return A(t(l, 'wait', { time: dur((readyAt - Date.now()) / 1000) }));
+    }
+
     if (tk.type === 'channel' && tk.chat_id) {
+      // channel task: sotti member kina
       const r = await tg('getChatMember', { chat_id: tk.chat_id, user_id: user.id });
       const s = r.ok ? r.result.status : '';
       if (!['member', 'administrator', 'creator'].includes(s) && !(s === 'restricted' && r.result.is_member)) return A(t(l, 'notJoined'));
+    } else if (S('task_click_required') !== 'off') {
+      // baki task: user ke link e click korte hobe, tarpor kichu second wait
+      const { data: ck } = await sb.from('task_clicks').select('clicked_at').eq('user_id', user.id).eq('task_id', id).maybeSingle();
+      const clickedAt = ck ? new Date(ck.clicked_at).getTime() : 0;
+      if (!ck || (ut && ut.last_done && clickedAt <= new Date(ut.last_done).getTime())) return A(t(l, 'clickFirst'));
+      const left = Math.ceil((clickedAt + Number(S('task_min_seconds') ?? 10) * 1000 - Date.now()) / 1000);
+      if (left > 0) return A(t(l, 'clickWait', { time: dur(left) }));
     }
-    const rh = tk.reset_hours ?? Number(S('task_reset_hours') ?? 24);
+
     const { data: res, error } = await sb.rpc('complete_task', { uid: user.id, tid: id, rew: tk.reward, reset_h: rh });
     if (error) { console.error(error); return A(t(l, 'notJoined')); }
     const r = Number(res);
