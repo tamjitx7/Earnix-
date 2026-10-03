@@ -1,8 +1,6 @@
 const crypto = require('crypto');
-const { createClient } = require('@supabase/supabase-js');
-const { L } = require('./i18n');
-const { fx } = require('./emoji');
-const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+const C = require('./core');
+const { sb, loadCache, S, t, send } = C;
 
 function validInitData(initData) {
   const p = new URLSearchParams(initData);
@@ -11,34 +9,51 @@ function validInitData(initData) {
   const secret = crypto.createHmac('sha256', 'WebAppData').update(process.env.BOT_TOKEN).digest();
   const calc = crypto.createHmac('sha256', secret).update(dcs).digest('hex');
   if (calc !== hash) return null;
-  if (Date.now() / 1000 - Number(p.get('auth_date')) > 3600) return null;
+  if (Date.now() / 1000 - Number(p.get('auth_date')) > 600) return null;
   return JSON.parse(p.get('user'));
 }
 
-async function tgSend(chat_id, text) {
-  const f = fx(text);
-  const url = `https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendMessage`;
-  const post = (b) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }).then((r) => r.json());
-  const r = await post({ chat_id, text: f.text, ...(f.entities.length ? { entities: f.entities } : {}) });
-  if (!r.ok && f.entities.length) await post({ chat_id, text: f.text });
-}
-
 exports.handler = async (event) => {
-  if (event.httpMethod !== 'POST') return { statusCode: 405 };
-  const { initData, fp } = JSON.parse(event.body || '{}');
-  const tu = initData && validInitData(initData);
-  if (!tu || !fp) return { statusCode: 401, body: JSON.stringify({ ok: false }) };
+  const res = (code, ok, msg) => ({ statusCode: code, body: JSON.stringify({ ok, msg }) });
+  if (event.httpMethod !== 'POST') return res(405, false);
+  let body;
+  try { body = JSON.parse(event.body || '{}'); } catch { return res(400, false); }
+  const tu = body.initData && validInitData(body.initData);
+  if (!tu || !body.fp || !body.token) return res(401, false);
 
+  await loadCache();
   const { data: user } = await sb.from('users').select('lang').eq('id', tu.id).maybeSingle();
-  if (!user) return { statusCode: 404, body: JSON.stringify({ ok: false }) };
+  if (!user) return res(404, false);
   const l = user.lang || 'en';
 
-  const { error } = await sb.from('users').update({ device_verified: true, device_hash: fp, state: 'w_uid', state_data: null }).eq('id', tu.id);
-  if (error) {
-    await tgSend(tu.id, L[l].verifyFail);
-    return { statusCode: 409, body: JSON.stringify({ ok: false }) };
+  const mode = S('device_mode') || 'token';
+  const token = String(body.token).slice(0, 64), fp = String(body.fp).slice(0, 64);
+  const rawIp = (event.headers['x-nf-client-connection-ip'] || String(event.headers['x-forwarded-for'] || '').split(',')[0] || '').trim();
+  const ip = rawIp ? crypto.createHash('sha256').update(rawIp + process.env.BOT_TOKEN).digest('hex').slice(0, 24) : null;
+  const flags = [];
+
+  if (mode !== 'off') {
+    const { data: byToken } = await sb.from('users').select('id').eq('device_token', token).neq('id', tu.id).limit(1);
+    if (byToken && byToken.length) { await send(tu.id, t(l, 'verifyFail')); return res(409, false, 'device'); }
+    const { data: byFp } = await sb.from('users').select('id').eq('device_hash', fp).neq('id', tu.id).limit(1);
+    if (byFp && byFp.length) {
+      if (mode === 'strict') { await send(tu.id, t(l, 'verifyFail')); return res(409, false, 'device'); }
+      flags.push('fp');
+    }
+    if (ip) {
+      const { data: byIp } = await sb.from('users').select('id').eq('device_ip', ip).neq('id', tu.id).limit(1);
+      if (byIp && byIp.length) flags.push('ip');
+    }
   }
-  await tgSend(tu.id, L[l].verifyOk);
-  await tgSend(tu.id, L[l].sendUid);
-  return { statusCode: 200, body: JSON.stringify({ ok: true }) };
+
+  const info = body.info && JSON.stringify(body.info).length < 2000 ? body.info : null;
+  const { error } = await sb.from('users').update({
+    device_verified: true, device_hash: fp, device_token: token, device_ip: ip, device_info: info,
+    dup_flag: flags.length ? flags.join(',') : null, state: 'w_uid', state_data: null
+  }).eq('id', tu.id);
+  if (error) { console.error(error); return res(500, false); }
+
+  await send(tu.id, t(l, 'verifyOk'));
+  await send(tu.id, t(l, 'sendUid'));
+  return res(200, true);
 };
