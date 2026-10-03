@@ -1,5 +1,4 @@
 // token -> [premium emoji id, fallback emoji]
-// Text-e {{money}} likhle premium emoji hoye jabe. Button-er text-er shurute likhle button-er icon hoy.
 const EM = {
   money: ['6190336264940559752', '💰'],
   wallet: ['5445353829304387411', '💳'],
@@ -34,38 +33,43 @@ const EM = {
   lang: ['6017109689748164760', '🌐']
 };
 
-const tok = () => /\{\{(\w+)\}\}/g;
+const re = () => /\{\{([^{}]+)\}\}/g;
 
-// Text theke {{token}} ke fallback emoji + custom_emoji entity te convert kore
+// {{money}} ba {{e:ID}} ba {{e:ID:fallback}}
+function resolve(name) {
+  if (EM[name]) return EM[name];
+  const m = /^e:(\d+)(?::(.*))?$/.exec(name);
+  return m ? [m[1], m[2] || '⭐'] : null;
+}
+
 function fx(text) {
-  const re = tok();
+  const r = re();
   let out = '', last = 0, m;
   const entities = [];
-  while ((m = re.exec(text))) {
+  while ((m = r.exec(text))) {
     out += text.slice(last, m.index);
-    const e = EM[m[1]];
+    const e = resolve(m[1]);
     if (e) {
       entities.push({ type: 'custom_emoji', offset: out.length, length: e[1].length, custom_emoji_id: e[0] });
       out += e[1];
-    }
+    } else out += m[0];
     last = m.index + m[0].length;
   }
   out += text.slice(last);
   return { text: out, entities };
 }
 
-// Jekhane premium emoji dewa jay na (alert, etc.) shekhane normal emoji
-const plain = (text) => String(text).replace(tok(), (_, k) => (EM[k] ? EM[k][1] : ''));
+const plain = (text) => String(text).replace(re(), (all, k) => { const e = resolve(k); return e ? e[1] : all; });
 
-// Button text: shurur {{token}} ta button icon hoye jay
 function parseBtn(text) {
+  text = String(text);
+  const m = text.match(/^\{\{([^{}]+)\}\}\s*/);
+  const e = m && resolve(m[1]);
   let icon;
-  const m = String(text).match(/^\{\{(\w+)\}\}\s*/);
-  if (m && EM[m[1]]) { icon = EM[m[1]][0]; text = String(text).slice(m[0].length); }
+  if (e) { icon = e[0]; text = text.slice(m[0].length); }
   return { text: plain(text), icon };
 }
 
-// Notun task-er lekha dekhe auto emoji
 function taskIcon(t) {
   const s = String(t.title || '').toLowerCase();
   if (/follow|subscribe/.test(s)) return 'follow';
@@ -78,4 +82,6 @@ function taskIcon(t) {
   return { channel: 'telegram', bot: 'rocket', post: 'pin' }[t.type] || 'tasks';
 }
 
-module.exports = { EM, fx, plain, parseBtn, taskIcon };
+const slotIcon = (g) => ({ official: 'telegram', partner: 'follow', folder: 'pin' }[g.slot] || 'announce');
+
+module.exports = { EM, fx, plain, parseBtn, taskIcon, slotIcon };
