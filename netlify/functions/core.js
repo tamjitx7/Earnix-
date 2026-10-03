@@ -1,12 +1,33 @@
+const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { T } = require('./i18n');
 const { fx, plain, parseBtn, slotIcon } = require('./emoji');
+
+// Notun text key (Admin Panel → Edit texts e eigulo o edit kora jay)
+Object.assign(T, {
+  clickFirst: {
+    vars: '',
+    en: '{{warn}} Open the task link first, complete the task, then tap Check.',
+    ar: '{{warn}} افتح رابط المهمة أولاً، أكملها، ثم اضغط تحقق.',
+    ru: '{{warn}} Сначала откройте ссылку задания, выполните его и затем нажмите «Проверить».'
+  },
+  clickWait: {
+    vars: '%time%',
+    en: '{{time}} Please complete the task first. Tap Check again in %time%.',
+    ar: '{{time}} يرجى إكمال المهمة أولاً. اضغط تحقق بعد %time%.',
+    ru: '{{time}} Сначала выполните задание. Нажмите «Проверить» через %time%.'
+  }
+});
 
 const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const API = `https://api.telegram.org/bot${process.env.BOT_TOKEN}`;
 const ADMINS = (process.env.ADMIN_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
 const BOT_USERNAME = process.env.BOT_USERNAME || 'earnix_ubot';
 const isAdmin = (id) => ADMINS.includes(String(id));
+
+// ---------- Task link click tracking ----------
+const signClick = (uid, tid) => crypto.createHmac('sha256', process.env.BOT_TOKEN).update(`${uid}:${tid}`).digest('hex').slice(0, 16);
+const trackUrl = (uid, tid) => `${process.env.SITE_URL}/.netlify/functions/go?u=${uid}&t=${tid}&s=${signClick(uid, tid)}`;
 
 // ---------- Telegram ----------
 const tg = (method, p = {}) =>
@@ -118,5 +139,5 @@ module.exports = {
   sb, API, ADMINS, BOT_USERNAME, isAdmin, tg, send, sendRaw, edit, editRaw, ack, show,
   loadCache, S, setSetting, setText, delText, hasText, rawText, t,
   mkBtn, btn, ubtn, norm, fmt, cleanTitle, setState, countOf, dur,
-  getGates, gateLink, gateKb, missingGates
+  getGates, gateLink, gateKb, missingGates, signClick, trackUrl
 };
