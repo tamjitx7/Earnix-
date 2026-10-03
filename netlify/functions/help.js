@@ -75,15 +75,24 @@ Add: Tasks → ➕ Add task → type → title → link → (channel hole @usern
 
 Type:
 - Join channel — bot sotti member kina check kore (bot ke channel e admin banate hobe).
-- Link / X / post — Check chaple reward dey (verify kora jay na).
-- Start bot — same, verify kora jay na.
+- Link / X / post — link click verify kore (niche dekho).
+- Start bot — link click verify kore (niche dekho).
+
+🔗 LINK CLICK VERIFY (channel chara baki task):
+User er button asol link e na giye amader tracker e jay, tarpor asol link e redirect hoy. Tai bot jane user link e click korse kina.
+- Click na kore Check chaple: "age link khulo" bole, reward dey na.
+- Click er por kichu second (default 10s) wait korte hoy, tarpor Check kaj kore.
+- Settings → Withdraw, rewards & tasks theke: "Task link-click required" ON/OFF ar wait second bodlano jay.
+- Task card e "Link clicks" dekhabe koto jon click korse.
+Limit: bot sotti jane na user X e follow korse kina. Shudhu jane link e click korse. Tai reward choto rakho.
 
 Auto emoji: title e Follow / Join / Bot / Post / Gift / Live thakle sundor premium emoji nijei boshe.
 
 Reset time: ekbar kora task abar koto ghonta por korte parbe.
-- Global: Settings → Withdraw & rewards → Task reset (default 24h).
+- Global: Settings → Withdraw, rewards & tasks → Task reset (default 24h).
 - Alada: task card → Reset → ghonta lekho. 0 = ekbar-i, global = global follow.
 ⚠️ Channel join task e reset diyo na. User already member, tai abar reward pabe. Tai channel task default e one-time.
+Abar reward nite hole notun click lage.
 Sobar task ekbare reset: Tasks → 🔄 Reset all now.
 
 User dekhe: Total / Completed / Remaining / Earned / Next reset.
@@ -93,7 +102,7 @@ Task edit: title, link, reward, reset, channel, on/off, delete.`
     id: 'ref', title: 'Referral',
     body: `👥 REFERRAL
 
-Reward per valid referral: Settings → Withdraw & rewards → Referral reward.
+Reward per valid referral: Settings → Withdraw, rewards & tasks → Referral reward.
 
 Valid kokhon: notun user referral link diye ashe → language bache → shob force-join channel e join kore Continue chape. Tokhon-i referrer er count + reward hoy.
 Pending: ashche kintu channel join kore ni.
@@ -110,7 +119,7 @@ Fraud dhorte: Users → user card → Duplicates (same device/IP). Nijeke refer 
 User flow: Balance → Withdraw → balance check → cooldown check → device verify → Binance UID → amount → Confirm → tomader kache Approve/Reject.
 
 Approve = total_withdrawn e jog hoy. Reject = balance ferot.
-Cooldown: Settings → Withdraw & rewards → Withdraw cooldown (default 6h, 0 = off). Rejected request count hoy na.
+Cooldown: Settings → Withdraw, rewards & tasks → Withdraw cooldown (default 6h, 0 = off). Rejected request count hoy na.
 ⚠️ Admin der o cooldown lage. Test korte 0 kore nio.
 Min/Max: oi page e.
 Bondho: Settings → General → Withdrawals toggle.
@@ -137,14 +146,22 @@ Limit: eta 100% fool-proof na. App data clear / reinstall korle token bodlay. Ta
     id: 'spam', title: 'Anti-spam',
     body: `🛡 ANTI-SPAM
 
-Bot er button/command chara onno kono message ba sticker dile bot kono uttor dey na, kintu gune rakhe.
+Bot er baire kono message, sticker, ba oichhik text dile bot kono uttor dey na, ar eta spam hishab hoy NA.
+Spam hishab hoy shudhu button / command beshi bar chaple: menu button, inline button (Check, Withdraw...), /start, /promo.
 
-Default: 10 minute e 3 ber er beshi hole "offense".
+Default: 30 second er moddhe 10 ber (ba beshi) chaple "offense".
 Offense ladder: 1st sotorkobarta, 2nd 1 min, 3rd 3 min, 4th 5 min, 5th 30 min, 6th BAN.
 24 ghonta bhalo thakle offense mone thake na.
 
-Settings → Anti-spam theke threshold, ladder (1,3,5,30), window, decay bodlano jay.
-Unmute/Unban: Users → user card → Unmute / Unban.
+Settings → Anti-spam theke bodlano jay:
+- Presses allowed in the window (default 10)
+- Window length in seconds (default 30)
+- Mute ladder (default 1,3,5,30 minutes)
+- Forget old offenses after (hours)
+
+Mone rekho: task Check chapao gone. Onek task thakle limit ektu barao.
+Restricted user dekhle inline button e "tumi restricted" alert pay, kono kaj hoy na.
+Unmute/Unban: Users → user card → Unmute / Unban. Banned/Muted list: Users → Banned / muted.
 Admin der spam hishab hoy na.`
   },
   {
@@ -186,9 +203,12 @@ money wallet uptrend profile trash cancel verified bell letter stop binance warn
 - Premium emoji dekhay na → owner account Premium kina dekho, Telegram update koro. Na hole bot nijei normal emoji dey.
 - Button color/icon dekhay na → Telegram app update koro. Purano desktop version e hoy na.
 - Force-join kaj kore na → bot channel e admin na ba Chat ID vul. Force-join page e 🧪 Test chapo.
-- Task Check hoy na → channel task hole user join kore ni ba bot admin na.
+- Task Check hoy na (channel task) → user join kore ni ba bot admin na.
+- Task Check e "age link khulo" → user task button e click kore ni. Settings e wait second beshi kina dekho. SITE_URL env var thik kina dekho (https://tomar-site.netlify.app, shesh e / chhara).
+- Task button e link khole error → Netlify e go.js function deploy hoyeche kina dekho.
 - Withdraw kora jay na → cooldown, min balance, withdrawals OFF, force-join, device verify check koro.
 - User verify te block → Device mode TOKEN kore dao ba Reset device.
+- User restricted hoye gese → Users → card → Unmute. Limit beshi choto hole Settings → Anti-spam e barao.
 - Broadcast e Failed → user bot block korse.
 - Panel button kaj kore na → /admin diye notun panel kholo.
 - Text edit korlam kintu purano dekhay → 20 second por update hoy.
@@ -213,7 +233,7 @@ Database: Supabase → Table editor / SQL editor. Notun SQL migration thakle SQL
 Backup: Supabase → Database → Backups, ba panel theke CSV export.
 
 Files:
-netlify/functions/ bot.js admin.js core.js help.js i18n.js emoji.js verify.js
+netlify/functions/ bot.js admin.js core.js go.js help.js i18n.js emoji.js verify.js
 public/verify.html`
   }
 ];
