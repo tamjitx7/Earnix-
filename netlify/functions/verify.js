@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+const crypto = require('node:crypto');
 const C = require('./core');
 const { sb, loadCache, S, t, send } = C;
 
