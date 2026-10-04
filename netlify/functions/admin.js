@@ -238,8 +238,8 @@ async function settings(c, mid, g) {
 // ----- Broadcast -----
 async function runBroadcast(c, mid, user, d) {
   const t0 = Date.now();
-  while (Date.now() - t0 < 7000) {
-    let q = sb.from('users').select('id').eq('banned', false).gt('id', d.after).order('id').limit(25);
+  while (Date.now() - t0 < 1) {
+    let q = sb.from('users').select('id').eq('banned', false).gt('id', d.after).order('id').limit(20);
     if (d.lang !== 'all') q = q.eq('lang', d.lang);
     const { data } = await q;
     if (!data || !data.length) {
