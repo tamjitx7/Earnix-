@@ -1,5 +1,5 @@
 const C = require('./core');
-const { sb, tg, send, sendRaw, editRaw, ack, show, t, S, btn, ubtn, mkBtn, norm, dur, fmt, cleanTitle, setState, loadCache, isAdmin, BOT_USERNAME, ADMINS, getGates, gateKb, missingGates, trackUrl } = C;
+const { sb, tg, send, sendRaw, editRaw, ack, show, t, S, btn, ubtn, mkBtn, norm, dur, fmt, cleanTitle, setState, loadCache, isAdmin, BOT_USERNAME, ADMINS, getGates, gateKb, missingGates, trackUrl, DEFAULT_TIERS, parseTiers, refReward, tierLines, creditReferral } = C;
 const { EM, fx, plain, parseBtn, taskIcon } = require('./emoji');
 const { T, NAMES, LANGS } = require('./i18n');
 const admin = require('./admin');
@@ -47,7 +47,19 @@ async function getUser(from, ref) {
     const { data: r } = await sb.from('users').select('id').eq('id', rb).maybeSingle();
     if (!r) rb = null;
   }
-  const ins = await sb.from('users').insert({ id: from.id, username: from.username || null, first_name: from.first_name || null, referred_by: rb }).select().single();
+  // Referral spam rule: window er moddhe max er beshi notun referral hole extra gulo spam
+  let spam = false;
+  if (rb) {
+    const max = Number(S('ref_spam_max') ?? 1), win = Number(S('ref_spam_minutes') ?? 2);
+    if (max > 0 && win > 0) {
+      const since = new Date(Date.now() - win * 60000).toISOString();
+      const { count } = await sb.from('users').select('id', { count: 'exact', head: true }).eq('referred_by', rb).eq('ref_spam', false).gte('created_at', since);
+      spam = (count || 0) >= max;
+    }
+  }
+  const ins = await sb.from('users')
+    .insert({ id: from.id, username: from.username || null, first_name: from.first_name || null, referred_by: rb, ...(spam ? { ref_spam: true } : {}) })
+    .select().single();
   if (ins.data) return ins.data;
   return (await sb.from('users').select('*').eq('id', from.id).single()).data;
 }
@@ -56,7 +68,8 @@ async function getUser(from, ref) {
 async function passGate(user) {
   await sb.from('users').update({ gate_ok: true }).eq('id', user.id);
   user.gate_ok = true;
-  if (user.referred_by && !user.ref_valid) await sb.rpc('credit_referral', { uid: user.id, reward: Number(S('ref_reward')) || 0 });
+  // spam referral hole kono reward nai
+  if (user.referred_by && !user.ref_valid && !user.ref_spam) await creditReferral(user);
 }
 async function gateBlocked(chat, user, adm) {
   if (adm || user.gate_ok || S('gate_enabled') === 'off') return false;
@@ -242,11 +255,18 @@ async function showTasks(chat, user, mid) {
 async function showRef(chat, user) {
   const l = user.lang;
   const { data: s } = await sb.rpc('ref_stats', { uid: user.id });
-  const r = s || { total: 0, valid: 0, earned: 0 };
+  const r = s || { total: 0, valid: 0, spam: 0, earned: 0 };
+  const spamN = Number(r.spam) || 0;
   const link = `https://t.me/${BOT_USERNAME}?start=ref_${user.id}`;
   const share = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(plain(t(l, 'refShareText')))}`;
-  return send(chat, t(l, 'ref', { reward: fmt(S('ref_reward') || 0), total: r.total, valid: r.valid, pending: r.total - r.valid, refEarned: fmt(r.earned), link }),
-    { reply_markup: { inline_keyboard: [[ubtn(t(l, 'refShareBtn'), share, 'success')]] } });
+  const base = Number(S('ref_reward')) || 0;
+  const tiers = parseTiers(S('ref_tiers')) || parseTiers(DEFAULT_TIERS);
+  const maxN = Number(S('ref_spam_max') ?? 1), win = Number(S('ref_spam_minutes') ?? 2);
+  const rule = maxN > 0 && win > 0 ? '\n\n' + t(l, 'refRule', { n: maxN, m: win }) : '';
+  return send(chat, t(l, 'ref', {
+    reward: fmt(refReward(Number(r.valid) + 1)), total: r.total, valid: r.valid, pending: Math.max(0, r.total - r.valid - spamN), spam: spamN,
+    refEarned: fmt(r.earned), link, tiers: tierLines(tiers, base), rule
+  }), { reply_markup: { inline_keyboard: [[ubtn(t(l, 'refShareBtn'), share, 'success')]] } });
 }
 
 // ====================== CALLBACKS ======================
