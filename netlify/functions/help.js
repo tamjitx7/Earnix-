@@ -16,7 +16,7 @@ Section gulo:
 🎁 Promo codes — user der gift code
 📢 Broadcast — shobai ke message
 📌 Edit texts — bot-er shob lekha + keyboard button-er naam (3 language)
-🔒 Settings — min/max, cooldown, reward, security, anti-spam
+🔒 Settings — withdraw, referral, security, anti-spam
 💬 Help — ei guide
 
 Commands:
@@ -82,14 +82,14 @@ Type:
 User er button asol link e na giye amader tracker e jay, tarpor asol link e redirect hoy. Tai bot jane user link e click korse kina.
 - Click na kore Check chaple: "age link khulo" bole, reward dey na.
 - Click er por kichu second (default 10s) wait korte hoy, tarpor Check kaj kore.
-- Settings → Withdraw, rewards & tasks theke: "Task link-click required" ON/OFF ar wait second bodlano jay.
+- Settings → Withdraw & tasks theke: "Task link-click required" ON/OFF ar wait second bodlano jay.
 - Task card e "Link clicks" dekhabe koto jon click korse.
 Limit: bot sotti jane na user X e follow korse kina. Shudhu jane link e click korse. Tai reward choto rakho.
 
 Auto emoji: title e Follow / Join / Bot / Post / Gift / Live thakle sundor premium emoji nijei boshe.
 
 Reset time: ekbar kora task abar koto ghonta por korte parbe.
-- Global: Settings → Withdraw, rewards & tasks → Task reset (default 24h).
+- Global: Settings → Withdraw & tasks → Task reset (default 24h).
 - Alada: task card → Reset → ghonta lekho. 0 = ekbar-i, global = global follow.
 ⚠️ Channel join task e reset diyo na. User already member, tai abar reward pabe. Tai channel task default e one-time.
 Abar reward nite hole notun click lage.
@@ -102,13 +102,38 @@ Task edit: title, link, reward, reset, channel, on/off, delete.`
     id: 'ref', title: 'Referral',
     body: `👥 REFERRAL
 
-Reward per valid referral: Settings → Withdraw, rewards & tasks → Referral reward.
-
-Valid kokhon: notun user referral link diye ashe → language bache → shob force-join channel e join kore Continue chape. Tokhon-i referrer er count + reward hoy.
+Valid kokhon: notun user referral link diye ashe → language bache → shob force-join channel e join kore Continue chape. Tokhon-i referrer er valid count + reward hoy.
 Pending: ashche kintu channel join kore ni.
+Spam: niche dekho.
 Referrer ke kono message jay na.
 
-User referral screen e dekhe: Total invited, Valid, Pending, Earned, ar share button.
+💰 REWARD STEP (beshi refer korle rate kome):
+Settings → Referral:
+- Referral base reward = full reward ($).
+- Referral reward steps = format "upto:percent", comma diye.
+Example: 5:70,10:60,20:50,50:45,0:40
+  1-5 number valid referral = base er 70%
+  6-10 = 60%
+  11-20 = 50%
+  21-50 = 45%
+  51+ = 40% (0 mane shesh porjonto, eta shesh entry hobe)
+Sobai full reward chaile: 0:100
+Notun step shudhu notun valid referral e lagu hoy. Ager pawa reward bodlay na.
+📊 Referral payout preview chaple 1, 5, 10, 20, 50, 100 referral e total payout dekhay.
+
+🛡 REFERRAL SPAM RULE:
+Settings → Referral:
+- Max referrals per window (default 1)
+- Window minutes (default 2)
+Rule: ekjon referrer er link diye window er moddhe max er beshi notun user ashle extra user "spam referral" hishebe mark hoy. Spam referral e kono reward hoy na, valid count e-o ashe na.
+0 dile rule bondho.
+User tar Referral screen e "Spam (no reward)" count ar rule dekhte pay.
+Spam dhora hoy user bot e prothom ashar somoy (referral link diye).
+False positive (asol manush): Users → Spam referrals → user chapo → "Approve referral (not spam)". Se already force-join pass kore thakle reward sathe sathe jog hoy.
+Dhoro 2 bondhu ekshathe link e chap dilo, tokhon ekjon spam hobe. Tai window choto rakho ba max ektu baro (jemon 3 per 2 min).
+
+User er Referral screen e dekhe: Total invited, Valid, Pending, Spam, Earned, reward step gulo, next valid referral koto dibe, share button.
+Edit texts e "ref" text customise korle %tiers% ar %rule% variable rakho, na hole step ar rule dekhabe na.
 
 Fraud dhorte: Users → user card → Duplicates (same device/IP). Nijeke refer kora auto block.`
   },
@@ -119,7 +144,7 @@ Fraud dhorte: Users → user card → Duplicates (same device/IP). Nijeke refer 
 User flow: Balance → Withdraw → balance check → cooldown check → device verify → Binance UID → amount → Confirm → tomader kache Approve/Reject.
 
 Approve = total_withdrawn e jog hoy. Reject = balance ferot.
-Cooldown: Settings → Withdraw, rewards & tasks → Withdraw cooldown (default 6h, 0 = off). Rejected request count hoy na.
+Cooldown: Settings → Withdraw & tasks → Withdraw cooldown (default 6h, 0 = off). Rejected request count hoy na.
 ⚠️ Admin der o cooldown lage. Test korte 0 kore nio.
 Min/Max: oi page e.
 Bondho: Settings → General → Withdrawals toggle.
@@ -144,7 +169,7 @@ Limit: eta 100% fool-proof na. App data clear / reinstall korle token bodlay. Ta
   },
   {
     id: 'spam', title: 'Anti-spam',
-    body: `🛡 ANTI-SPAM
+    body: `🛡 ANTI-SPAM (button / command)
 
 Bot er baire kono message, sticker, ba oichhik text dile bot kono uttor dey na, ar eta spam hishab hoy NA.
 Spam hishab hoy shudhu button / command beshi bar chaple: menu button, inline button (Check, Withdraw...), /start, /promo.
@@ -162,16 +187,17 @@ Settings → Anti-spam theke bodlano jay:
 Mone rekho: task Check chapao gone. Onek task thakle limit ektu barao.
 Restricted user dekhle inline button e "tumi restricted" alert pay, kono kaj hoy na.
 Unmute/Unban: Users → user card → Unmute / Unban. Banned/Muted list: Users → Banned / muted.
-Admin der spam hishab hoy na.`
+Admin der spam hishab hoy na.
+(Referral spam alada rule: Help → Referral dekho.)`
   },
   {
     id: 'users', title: 'Users',
     body: `👤 USERS
 
 Find: ID ba @username.
-Card e: balance, earned, withdrawn, referrals (valid), tasks, device, flags, spam, joined.
-Actions: Add/Remove balance, Ban/Unban, Reset device, Unmute, Message user, Duplicates, Reset tasks.
-Lists: Top referrers, Top earners, Flagged, Banned/Muted.
+Card e: balance, earned, withdrawn, referrals (valid / spam), tasks, device, flags, spam, joined.
+Actions: Add/Remove balance, Ban/Unban, Reset device, Unmute, Message user, Duplicates, Reset tasks, Approve referral (spam hole).
+Lists: Top referrers, Top earners, Flagged, Banned/Muted, Spam referrals.
 Export CSV: sob user er file.`
   },
   {
@@ -179,7 +205,7 @@ Export CSV: sob user er file.`
     body: `📢 BROADCAST
 
 Broadcast → text lekho (premium emoji paste kora jay ba {{fire}} token) → preview → Everyone ba AR/RU/EN.
-Ek bare ~150-200 jon ke pathay (Netlify time limit). Baki thakle ▶️ Continue chapo, shesh na hoya porjonto.
+Ek bare ~20 jon ke pathay (Cloudflare free plan er limit). Baki thakle ▶️ Continue chapo, shesh na hoya porjonto.
 Banned user ke pathay na. Bot block kora user "Failed" e gone.`
   },
   {
@@ -199,31 +225,32 @@ money wallet uptrend profile trash cancel verified bell letter stop binance warn
     id: 'fix', title: 'Somossha o somadhan',
     body: `🧰 SOMOSSHA O SOMADHAN
 
-- Bot reply dey na → browser e https://api.telegram.org/botTOKEN/getWebhookInfo kholo. last_error_message dekho. 401 = WEBHOOK_SECRET mile nai. 500 = Netlify function log dekho. Env var change korle Deploy abar korte hobe.
+- Bot reply dey na → browser e https://api.telegram.org/botTOKEN/getWebhookInfo kholo. last_error_message dekho. 401 = WEBHOOK_SECRET mile nai. 500 = Cloudflare Worker log dekho. Secret change korle Worker e Deploy korte hobe.
 - Premium emoji dekhay na → owner account Premium kina dekho, Telegram update koro. Na hole bot nijei normal emoji dey.
 - Button color/icon dekhay na → Telegram app update koro. Purano desktop version e hoy na.
 - Force-join kaj kore na → bot channel e admin na ba Chat ID vul. Force-join page e 🧪 Test chapo.
 - Task Check hoy na (channel task) → user join kore ni ba bot admin na.
-- Task Check e "age link khulo" → user task button e click kore ni. Settings e wait second beshi kina dekho. SITE_URL env var thik kina dekho (https://tomar-site.netlify.app, shesh e / chhara).
-- Task button e link khole error → Netlify e go.js function deploy hoyeche kina dekho.
+- Task Check e "age link khulo" → user task button e click kore ni. Settings e wait second beshi kina dekho. SITE_URL secret thik kina dekho (https://earnix-bot.xxx.workers.dev, shesh e / chhara).
 - Withdraw kora jay na → cooldown, min balance, withdrawals OFF, force-join, device verify check koro.
 - User verify te block → Device mode TOKEN kore dao ba Reset device.
 - User restricted hoye gese → Users → card → Unmute. Limit beshi choto hole Settings → Anti-spam e barao.
+- Referral reward pay na → user spam referral hoyeche kina dekho (Users → Spam referrals). Settings → Referral e window / max bodlao.
 - Broadcast e Failed → user bot block korse.
 - Panel button kaj kore na → /admin diye notun panel kholo.
 - Text edit korlam kintu purano dekhay → 20 second por update hoy.
 - Stats e error → SQL migration run korcho kina dekho.
-- Netlify deploy fail → Deploys log e error line dekho. File path thik kina dekho.`
+- Error 1102 (Worker exceeded resource limits) → free plan er 10ms CPU limit. Bhari kaj (boro CSV export) e hoy. Workers Paid e gele jay.
+- Deploy fail → Cloudflare → Worker → Deployments / Builds log e error line dekho. File path thik kina dekho.`
   },
   {
     id: 'tech', title: 'Technical',
-    body: `⚙️ TECHNICAL (Netlify / Supabase / GitHub)
+    body: `⚙️ TECHNICAL (Cloudflare / Supabase / GitHub)
 
-Env vars (Netlify → Site configuration → Environment variables):
+Secrets (Cloudflare → Workers & Pages → earnix-bot → Settings → Variables and Secrets, prottek-ta Secret):
 BOT_TOKEN, BOT_USERNAME, SUPABASE_URL, SUPABASE_SERVICE_KEY, WEBHOOK_SECRET, ADMIN_IDS (comma diye), SITE_URL
 
-Notun admin: ADMIN_IDS e numeric ID comma diye jog → Deploys → Trigger deploy.
-Code update: GitHub e file open → ✏️ edit → Commit. Netlify auto deploy kore.
+Notun admin: ADMIN_IDS secret e numeric ID comma diye jog → Deploy.
+Code update: GitHub e file open → ✏️ edit → Commit. Cloudflare auto deploy kore.
 
 Webhook set:
 https://api.telegram.org/botTOKEN/setWebhook?url=SITE/.netlify/functions/bot&secret_token=SECRET
@@ -233,6 +260,7 @@ Database: Supabase → Table editor / SQL editor. Notun SQL migration thakle SQL
 Backup: Supabase → Database → Backups, ba panel theke CSV export.
 
 Files:
+worker.js wrangler.toml
 netlify/functions/ bot.js admin.js core.js go.js help.js i18n.js emoji.js verify.js
 public/verify.html`
   }
