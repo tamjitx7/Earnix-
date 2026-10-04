@@ -1,5 +1,5 @@
 const C = require('./core');
-const { sb, API, tg, send, sendRaw, show, btn, t, S, setSetting, setText, delText, hasText, rawText, fmt, dur, cleanTitle, setState, countOf, getGates, gateKb } = C;
+const { sb, API, tg, send, sendRaw, show, btn, t, S, setSetting, setText, delText, hasText, rawText, fmt, dur, cleanTitle, setState, countOf, getGates, gateKb, parseTiers, refReward, DEFAULT_TIERS, creditReferral } = C;
 const { T, NAMES, LANGS } = require('./i18n');
 const { taskIcon, slotIcon } = require('./emoji');
 const { PAGES } = require('./help');
@@ -22,17 +22,27 @@ const SET = {
   min_withdraw: ['Min withdraw ($)', 'num'],
   max_withdraw: ['Max withdraw ($)', 'num'],
   withdraw_cooldown_hours: ['Withdraw cooldown (hours, 0 = off)', 'num'],
-  ref_reward: ['Referral reward ($ per valid referral)', 'num'],
   task_reset_hours: ['Task reset (hours, 0 = one-time)', 'num'],
   task_min_seconds: ['Task: seconds to wait after link click before Check works', 'num'],
+  ref_reward: ['Referral base reward ($)', 'num'],
+  ref_tiers: ['Referral reward steps (upto:percent)', 'tiers'],
+  ref_spam_max: ['Referral spam: max new referrals that can earn per window (0 = rule off)', 'int0'],
+  ref_spam_minutes: ['Referral spam: window length (minutes)', 'num'],
   spam_threshold: ['Spam: button/command presses allowed in the window', 'int'],
   spam_window_sec: ['Spam: window length (seconds)', 'num'],
   spam_ladder: ['Spam: mute ladder in minutes (e.g. 1,3,5,30)', 'list'],
   spam_decay_hours: ['Spam: forget old offenses after (hours)', 'num']
 };
+const DEFV = { ref_tiers: `${DEFAULT_TIERS} (default)`, ref_spam_max: '1 (default)', ref_spam_minutes: '2 (default)' };
+const HINT = {
+  ref_tiers: '\n\nFormat: upto:percent, comma separated.\nExample: 5:70,10:60,20:50,0:40\n= referrals 1-5 pay 70%, 6-10 pay 60%, 11-20 pay 50%, 21+ pay 40% of the base reward (0 = no limit, only as the last entry).\nFull reward every time: 0:100\nUsers see these steps in their Referral screen.',
+  ref_spam_max: '\n\nHow many NEW referrals per window can earn.\n1 = only one per window. Extra ones are marked as spam and earn nothing.\n0 = this rule is OFF.',
+  ref_spam_minutes: '\n\nWindow length in minutes, e.g. 2.'
+};
 const GROUPS = {
   gen: ['{{info}} General', ['support_link'], ['maintenance', 'withdraw_enabled', 'gate_enabled']],
-  wd: ['{{wallet}} Withdraw, rewards & tasks', ['min_withdraw', 'max_withdraw', 'withdraw_cooldown_hours', 'ref_reward', 'task_reset_hours', 'task_min_seconds'], ['task_click_required']],
+  wd: ['{{wallet}} Withdraw & tasks', ['min_withdraw', 'max_withdraw', 'withdraw_cooldown_hours', 'task_reset_hours', 'task_min_seconds'], ['task_click_required']],
+  ref: ['{{follow}} Referral', ['ref_reward', 'ref_tiers', 'ref_spam_max', 'ref_spam_minutes'], []],
   sec: ['{{lock}} Device security', [], []],
   spam: ['{{stop}} Anti-spam', ['spam_threshold', 'spam_window_sec', 'spam_ladder', 'spam_decay_hours'], []]
 };
@@ -65,7 +75,7 @@ async function stats(c, mid) {
   return show(c, mid,
     `{{uptrend}} Stats\n\n{{profile}} Users: ${s.users} (today +${s.today})\n{{verified}} Passed force-join: ${s.passed}\n{{live}} Active 24h: ${s.active24}\n{{lock}} Verified devices: ${s.verified} · {{warn}} Flagged: ${s.flagged}\n{{stop}} Banned: ${s.banned} · {{time}} Muted now: ${s.muted}\n{{lang}} AR ${lg.ar || 0} · RU ${lg.ru || 0} · EN ${lg.en || 0}\n\n` +
     `{{money}} Users' balances: $${fmt(s.balances)}\n{{uptrend}} Total earned: $${fmt(s.earned)}\n{{wallet}} Total paid: $${fmt(s.paid)}\n{{time}} Pending: ${s.pending} ($${fmt(s.pending_amt)})\n\n` +
-    `{{tasks}} Task completions: ${s.tasks_done} (paid $${fmt(s.task_earned)})\n{{follow}} Referrals: ${s.refs} · valid ${s.refs_valid} (paid $${fmt(s.ref_paid)})`,
+    `{{tasks}} Task completions: ${s.tasks_done} (paid $${fmt(s.task_earned)})\n{{follow}} Referrals: ${s.refs} · valid ${s.refs_valid} · spam ${s.refs_spam || 0} (paid $${fmt(s.ref_paid)})`,
     [[btn('🔄 Refresh', 'a:st', 'primary')], BACK]);
 }
 
@@ -131,15 +141,17 @@ async function userCard(c, mid, uid) {
     sb.rpc('ref_stats', { uid }),
     countOf(sb.from('user_tasks').select('user_id', { count: 'exact', head: true }).eq('user_id', uid))
   ]);
-  const r = rs || { total: 0, valid: 0, earned: 0 };
+  const r = rs || { total: 0, valid: 0, spam: 0, earned: 0 };
   const muted = u.mute_until && new Date(u.mute_until) > new Date();
+  const refState = u.ref_spam ? 'SPAM' : u.ref_valid ? 'valid' : 'pending';
   return show(c, mid,
-    `{{profile}} ${u.first_name || '-'} ${u.username ? '@' + u.username : ''}\nID: ${u.id} · Lang: ${u.lang || '-'}\n\n{{money}} Balance: $${fmt(u.balance)}\n{{uptrend}} Earned: $${fmt(u.total_earned)}\n{{wallet}} Withdrawn: $${fmt(u.total_withdrawn)}\n{{follow}} Referrals: ${r.total} (valid ${r.valid}, earned $${fmt(r.earned)})${u.referred_by ? `\nInvited by: ${u.referred_by} (${u.ref_valid ? 'valid' : 'pending'})` : ''}\n{{tasks}} Tasks done: ${tasks}\n{{telegram}} Force-join passed: ${u.gate_ok ? 'yes' : 'no'}\n{{lock}} Device: ${u.device_verified ? 'verified' : 'not verified'}${u.dup_flag ? `\n{{warn}} Flags: ${u.dup_flag}` : ''}\n{{stop}} Banned: ${u.banned ? 'yes' : 'no'}${muted ? ` · muted until ${new Date(u.mute_until).toISOString().slice(11, 16)} UTC` : ''}\nSpam offenses: ${u.offenses || 0}\n{{time}} Joined: ${String(u.created_at).slice(0, 10)}`,
+    `{{profile}} ${u.first_name || '-'} ${u.username ? '@' + u.username : ''}\nID: ${u.id} · Lang: ${u.lang || '-'}\n\n{{money}} Balance: $${fmt(u.balance)}\n{{uptrend}} Earned: $${fmt(u.total_earned)}\n{{wallet}} Withdrawn: $${fmt(u.total_withdrawn)}\n{{follow}} Referrals: ${r.total} (valid ${r.valid}, spam ${r.spam || 0}, earned $${fmt(r.earned)})${u.referred_by ? `\nInvited by: ${u.referred_by} (${refState})` : ''}\n{{tasks}} Tasks done: ${tasks}\n{{telegram}} Force-join passed: ${u.gate_ok ? 'yes' : 'no'}\n{{lock}} Device: ${u.device_verified ? 'verified' : 'not verified'}${u.dup_flag ? `\n{{warn}} Flags: ${u.dup_flag}` : ''}\n{{stop}} Banned: ${u.banned ? 'yes' : 'no'}${muted ? ` · muted until ${new Date(u.mute_until).toISOString().slice(11, 16)} UTC` : ''}\nSpam offenses: ${u.offenses || 0}\n{{time}} Joined: ${String(u.created_at).slice(0, 10)}`,
     [
       [btn('{{money}} Add balance', `a:ub:${uid}:+`, 'success'), btn('➖ Remove', `a:ub:${uid}:-`, 'danger')],
       [btn(u.banned ? '{{verified}} Unban' : '{{stop}} Ban', `a:ubn:${uid}`, u.banned ? 'success' : 'danger'), btn('🔄 Reset device', `a:ur:${uid}`)],
       [btn('{{letter}} Message user', `a:um:${uid}`), btn('{{warn}} Duplicates', `a:udup:${uid}`)],
       [btn('🔊 Unmute / clear strikes', `a:uun:${uid}`), btn('🔄 Reset tasks', `a:utr:${uid}`)],
+      ...(u.ref_spam ? [[btn('{{verified}} Approve referral (not spam)', `a:rsp:${uid}`, 'success')]] : []),
       [btn('⬅️ Back', 'a:u')]
     ]);
 }
@@ -216,10 +228,11 @@ async function textView(c, mid, lang, key) {
 async function settings(c, mid, g) {
   if (!g) {
     return show(c, mid, '{{lock}} Settings\n\nPick a group:', [
-      [btn(GROUPS.gen[0], 'a:s:gen')], [btn(GROUPS.wd[0], 'a:s:wd')], [btn(GROUPS.sec[0], 'a:s:sec')], [btn(GROUPS.spam[0], 'a:s:spam')], BACK]);
+      [btn(GROUPS.gen[0], 'a:s:gen')], [btn(GROUPS.wd[0], 'a:s:wd')], [btn(GROUPS.ref[0], 'a:s:ref')], [btn(GROUPS.sec[0], 'a:s:sec')], [btn(GROUPS.spam[0], 'a:s:spam')], BACK]);
   }
   const [title, keys, togs] = GROUPS[g];
-  const lines = keys.map((k) => `${SET[k][0]}: ${S(k) ?? '-'}`);
+  const val = (k) => S(k) ?? DEFV[k] ?? '-';
+  const lines = keys.map((k) => `${SET[k][0]}: ${val(k)}`);
   const rows = keys.map((k) => [btn(`✏️ ${SET[k][0]}`.slice(0, 60), `a:se:${k}`)]);
   for (const k of togs) {
     const on = (S(k) ?? TOG[k][1]) === 'on';
@@ -227,6 +240,7 @@ async function settings(c, mid, g) {
     lines.push(`${TOG[k][0]}: ${on ? 'ON' : 'OFF'}`);
     rows.push([btn(`${good ? '{{verified}}' : '{{warn}}'} ${TOG[k][0]}: ${on ? 'ON' : 'OFF'} (tap to switch)`, `a:tg:${k}:${g}`, good ? 'success' : 'danger')]);
   }
+  if (g === 'ref') rows.push([btn('{{uptrend}} Referral payout preview', 'a:rtp', 'primary')]);
   if (g === 'sec') {
     lines.push(`Device check mode: ${MODES[S('device_mode') || 'token']}`);
     rows.push([btn('🔁 Change device mode', 'a:dm', 'primary')]);
@@ -316,7 +330,7 @@ async function cb(q, user, path) {
       [btn('{{profile}} Find user', 'a:uf', 'primary')],
       [btn('{{follow}} Top referrers', 'a:ut'), btn('{{uptrend}} Top earners', 'a:ue')],
       [btn('{{warn}} Flagged', 'a:ufl'), btn('{{stop}} Banned / muted', 'a:ubl')],
-      [btn('{{pin}} Export users CSV', 'a:uex')], BACK]);
+      [btn('{{stop}} Spam referrals', 'a:usl'), btn('{{pin}} Export users CSV', 'a:uex')], BACK]);
     case 'uf': return ask('a_u_find', {}, '🔎 Send the user ID or @username');
     case 'ut': {
       const { data } = await sb.rpc('top_referrers', { n: 10 });
@@ -330,7 +344,15 @@ async function cb(q, user, path) {
     }
     case 'ufl': return userList(c, mid, '{{warn}} Flagged users', sb.from('users').select('id,username,first_name,banned').not('dup_flag', 'is', null));
     case 'ubl': return userList(c, mid, '{{stop}} Banned / muted', sb.from('users').select('id,username,first_name,banned').or(`banned.eq.true,mute_until.gt.${new Date().toISOString()}`));
-    case 'uex': await exportCsv(c, 'users', 'id,username,first_name,lang,balance,total_earned,total_withdrawn,referred_by,ref_valid,gate_ok,device_verified,dup_flag,banned,created_at', 'users.csv'); return;
+    case 'usl': return userList(c, mid, '{{stop}} Spam referrals (referred users)', sb.from('users').select('id,username,first_name,banned').eq('ref_spam', true).order('created_at', { ascending: false }));
+    case 'rsp': {
+      const { data: u } = await sb.from('users').select('*').eq('id', Number(a1)).single();
+      await sb.from('users').update({ ref_spam: false }).eq('id', u.id);
+      u.ref_spam = false;
+      if (u.referred_by && u.gate_ok && !u.ref_valid) await creditReferral(u);
+      return userCard(c, mid, Number(a1));
+    }
+    case 'uex': await exportCsv(c, 'users', 'id,username,first_name,lang,balance,total_earned,total_withdrawn,referred_by,ref_valid,ref_spam,gate_ok,device_verified,dup_flag,banned,created_at', 'users.csv'); return;
     case 'uc': return userCard(c, mid, Number(a1));
     case 'ub': return ask('a_u_bal', { uid: Number(a1), sign: a2 }, `{{money}} ${a2 === '+' ? 'Add' : 'Remove'} balance: send the amount in USDT`);
     case 'ubn': {
@@ -398,7 +420,7 @@ async function cb(q, user, path) {
     case 's': return settings(c, mid, a1);
     case 'se':
       if (!SET[a1]) return;
-      return ask('a_s', { key: a1 }, `✏️ Send the new value for: ${SET[a1][0]}\nCurrent: ${S(a1) ?? '-'}`);
+      return ask('a_s', { key: a1 }, `✏️ Send the new value for: ${SET[a1][0]}\nCurrent: ${S(a1) ?? DEFV[a1] ?? '-'}${HINT[a1] || ''}`);
     case 'tg': {
       if (!TOG[a1]) return;
       await setSetting(a1, (S(a1) ?? TOG[a1][1]) === 'on' ? 'off' : 'on');
@@ -408,6 +430,17 @@ async function cb(q, user, path) {
       const order = ['off', 'token', 'strict'];
       await setSetting('device_mode', order[(order.indexOf(S('device_mode') || 'token') + 1) % 3]);
       return settings(c, mid, 'sec');
+    }
+    case 'rtp': {
+      const base = Number(S('ref_reward')) || 0;
+      const marks = [1, 5, 10, 20, 50, 100];
+      let cum = 0;
+      const lines = [];
+      for (let n = 1; n <= 100; n++) {
+        cum += refReward(n);
+        if (marks.includes(n)) lines.push(`${n} valid referrals: $${fmt(cum)} (${base ? Math.round((cum / (base * n)) * 100) : 0}% of full)`);
+      }
+      return show(c, mid, `{{uptrend}} Referral payout preview\n\nBase reward: $${fmt(base)}\nSteps: ${S('ref_tiers') ?? DEFAULT_TIERS}\n\n${lines.join('\n')}`, [[btn('⬅️ Back', 'a:s:ref')]]);
     }
 
     // ----- Help -----
@@ -505,10 +538,15 @@ async function input(m, user) {
       let v = text;
       if (type === 'num') { const n = num(text); if (!isFinite(n) || n < 0) return bad('Send a valid number.'); v = String(n); }
       if (type === 'int') { const n = Number(text); if (!Number.isInteger(n) || n < 1) return bad('Send a whole number (1 or more).'); v = String(n); }
+      if (type === 'int0') { const n = Number(text); if (!Number.isInteger(n) || n < 0) return bad('Send a whole number (0 or more).'); v = String(n); }
       if (type === 'list') {
         const arr = text.split(',').map((x) => Number(x.trim()));
         if (!arr.length || arr.some((n) => !(n > 0))) return bad('Send minutes separated by commas, e.g. 1,3,5,30');
         v = arr.join(',');
+      }
+      if (type === 'tiers') {
+        if (!parseTiers(text)) return bad('Wrong format. Example: 5:70,10:60,20:50,0:40\n(limits must go up, percent 0-100, and only the LAST entry may use 0)');
+        v = text.replace(/\s+/g, '');
       }
       await setSetting(d.key, v);
       await done();
