@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+const crypto = require('node:crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { T } = require('./i18n');
 const { fx, plain, parseBtn, slotIcon } = require('./emoji');
