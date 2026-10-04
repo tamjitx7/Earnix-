@@ -3,7 +3,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { T } = require('./i18n');
 const { fx, plain, parseBtn, slotIcon } = require('./emoji');
 
-// Notun text key (Admin Panel → Edit texts e eigulo o edit kora jay)
+// Notun / override kora text key (Admin Panel → Edit texts e eigulo o edit kora jay)
 Object.assign(T, {
   clickFirst: {
     vars: '',
@@ -16,6 +16,18 @@ Object.assign(T, {
     en: '{{time}} Please complete the task first. Tap Check again in %time%.',
     ar: '{{time}} يرجى إكمال المهمة أولاً. اضغط تحقق بعد %time%.',
     ru: '{{time}} Сначала выполните задание. Нажмите «Проверить» через %time%.'
+  },
+  ref: {
+    vars: '%reward% %total% %valid% %pending% %spam% %refEarned% %link% %tiers% %rule%',
+    en: '{{follow}} Referral Program\n\n{{money}} Your next valid referral pays: $%reward% USDT\n{{profile}} Total invited: %total%\n{{verified}} Valid referrals: %valid%\n{{time}} Pending: %pending%\n{{stop}} Spam (no reward): %spam%\n{{uptrend}} Earned from referrals: $%refEarned% USDT\n\n{{info}} Reward steps (the more you invite, the lower the rate):\n%tiers%%rule%\n\n{{pin}} Your link:\n%link%\n\nA referral becomes valid after your friend joins all required channels.',
+    ar: '{{follow}} برنامج الإحالة\n\n{{money}} الإحالة الصالحة التالية تدفع: $%reward% USDT\n{{profile}} إجمالي المدعوين: %total%\n{{verified}} الإحالات الصالحة: %valid%\n{{time}} قيد الانتظار: %pending%\n{{stop}} إحالات مزعجة (بدون مكافأة): %spam%\n{{uptrend}} الأرباح من الإحالات: $%refEarned% USDT\n\n{{info}} مراحل المكافأة (كلما دعوت أكثر انخفضت النسبة):\n%tiers%%rule%\n\n{{pin}} رابطك:\n%link%\n\nتصبح الإحالة صالحة بعد انضمام صديقك إلى جميع القنوات المطلوبة.',
+    ru: '{{follow}} Реферальная программа\n\n{{money}} Следующий активный реферал принесёт: $%reward% USDT\n{{profile}} Всего приглашено: %total%\n{{verified}} Активные рефералы: %valid%\n{{time}} В ожидании: %pending%\n{{stop}} Спам-рефералы (без награды): %spam%\n{{uptrend}} Заработано на рефералах: $%refEarned% USDT\n\n{{info}} Ступени награды (чем больше приглашений, тем ниже ставка):\n%tiers%%rule%\n\n{{pin}} Ваша ссылка:\n%link%\n\nРеферал считается активным, когда друг вступит во все обязательные каналы.'
+  },
+  refRule: {
+    vars: '%n% %m%',
+    en: '{{warn}} Anti-spam rule: only %n% new referral(s) per %m% minute(s) can earn. Extra ones are marked as spam and earn nothing.',
+    ar: '{{warn}} قاعدة مكافحة الإزعاج: يُحتسب فقط %n% إحالة جديدة كل %m% دقيقة. الإحالات الزائدة تُعتبر مزعجة ولا تكسب شيئاً.',
+    ru: '{{warn}} Антиспам-правило: награда начисляется только за %n% нового реферала за %m% мин. Лишние помечаются как спам и ничего не приносят.'
   }
 });
 
@@ -110,6 +122,46 @@ function dur(sec) {
   return `${s}s`;
 }
 
+// ---------- Referral reward steps (upto:percent) ----------
+// "5:70,10:60,20:50,50:45,0:40" = 1-5th referral 70%, 6-10th 60%, 11-20th 50%, 21-50th 45%, 51+ 40% (0 = no limit)
+const DEFAULT_TIERS = '5:70,10:60,20:50,50:45,0:40';
+function parseTiers(s) {
+  const parts = String(s || DEFAULT_TIERS).split(',').map((x) => x.trim()).filter(Boolean);
+  const out = [];
+  let prev = 0;
+  for (let i = 0; i < parts.length; i++) {
+    const [a, b] = parts[i].split(':').map((x) => x.trim());
+    const upto = a === '*' ? 0 : Number(a), pct = Number(b);
+    if (!Number.isInteger(upto) || !isFinite(pct) || upto < 0 || pct < 0 || pct > 100) return null;
+    if (upto === 0 ? i !== parts.length - 1 : upto <= prev) return null;
+    if (upto) prev = upto;
+    out.push({ upto, pct });
+  }
+  return out.length ? out : null;
+}
+function tierPct(n, tiers) {
+  for (const x of tiers) if (x.upto === 0 || n <= x.upto) return x.pct;
+  return tiers[tiers.length - 1].pct;
+}
+// n = referrer-er n-th valid referral er reward
+function refReward(n) {
+  const tiers = parseTiers(cache.S.ref_tiers) || parseTiers(DEFAULT_TIERS);
+  return ((Number(cache.S.ref_reward) || 0) * tierPct(n, tiers)) / 100;
+}
+function tierLines(tiers, base) {
+  let from = 1;
+  return tiers.map((x) => {
+    const range = x.upto === 0 ? `${from}+` : x.upto === from ? `${from}` : `${from}-${x.upto}`;
+    from = x.upto + 1;
+    return `${range}: ${x.pct}% ($${fmt((base * x.pct) / 100)})`;
+  }).join('\n');
+}
+// referred user er referrer ke reward dey (referrer er valid count onujayi step)
+async function creditReferral(user) {
+  const { count } = await sb.from('users').select('id', { count: 'exact', head: true }).eq('referred_by', user.referred_by).eq('ref_valid', true);
+  return sb.rpc('credit_referral', { uid: user.id, reward: refReward((count || 0) + 1) });
+}
+
 // ---------- Force-join gates ----------
 async function getGates(all) {
   let q = sb.from('gates').select('*').order('sort').order('id');
@@ -139,5 +191,6 @@ module.exports = {
   sb, API, ADMINS, BOT_USERNAME, isAdmin, tg, send, sendRaw, edit, editRaw, ack, show,
   loadCache, S, setSetting, setText, delText, hasText, rawText, t,
   mkBtn, btn, ubtn, norm, fmt, cleanTitle, setState, countOf, dur,
+  DEFAULT_TIERS, parseTiers, refReward, tierLines, creditReferral,
   getGates, gateLink, gateKb, missingGates, signClick, trackUrl
 };
