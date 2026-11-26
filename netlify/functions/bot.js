@@ -3,11 +3,12 @@ const { sb, tg, send, sendRaw, editRaw, ack, show, t, S, btn, ubtn, mkBtn, norm,
 const { EM, fx, plain, parseBtn, taskIcon } = require('./emoji');
 const { T, NAMES, LANGS } = require('./i18n');
 const admin = require('./admin');
+const ads = require('./ads');
 
 const nm = (u) => u.first_name || u.username || 'friend';
 
 // ---------- Keyboards ----------
-const STY = { bal: 'primary', tasks: 'success', ref: 'success', sup: 'danger', lang: 'primary' }; // primary=blue success=green danger=red
+const STY = { bal: 'primary', tasks: 'success', ads: 'primary', ref: 'success', sup: 'danger', lang: 'primary' }; // primary=blue success=green danger=red
 function mk(l, k) {
   const p = parseBtn(t(l, 'btn_' + k));
   return { text: p.text, style: STY[k], ...(p.icon ? { icon_custom_emoji_id: p.icon } : {}) };
@@ -15,6 +16,7 @@ function mk(l, k) {
 const menuKb = (l, adm) => ({
   keyboard: [
     [mk(l, 'bal'), mk(l, 'tasks')],
+    [mk(l, 'ads')],
     [mk(l, 'ref'), mk(l, 'sup')],
     [mk(l, 'lang'), ...(adm ? [{ text: 'Admin Panel', style: 'primary', icon_custom_emoji_id: EM.lock[0] }] : [])]
   ],
@@ -27,7 +29,7 @@ const langInline = () => ({ inline_keyboard: LANGS.map((k) => [btn(NAMES[k], `lg
 function actionOf(text) {
   const x = norm(text);
   if (!x) return null;
-  for (const k of ['bal', 'tasks', 'ref', 'sup', 'lang'])
+  for (const k of ['bal', 'tasks', 'ads', 'ref', 'sup', 'lang'])
     for (const l of LANGS)
       for (const label of [t(l, 'btn_' + k), T['btn_' + k][l]])
         if (norm(parseBtn(label).text) === x) return k;
@@ -192,6 +194,7 @@ async function onMessage(m) {
   if (act) {
     await setState(user.id, null);
     if (act === 'lang') return send(chat, t(l, 'chooseLang'), { reply_markup: langInline() });
+    if (act === 'ads') return ads.intro(chat, user, null);
     if (act === 'bal') return send(chat, t(l, 'bal', { balance: fmt(user.balance), earned: fmt(user.total_earned), withdrawn: fmt(user.total_withdrawn) }),
       { reply_markup: { inline_keyboard: [[btn(t(l, 'withdraw'), 'wd', 'success')]] } });
     if (act === 'tasks') return showTasks(chat, user, null);
@@ -216,6 +219,8 @@ async function onMessage(m) {
     return send(chat, t(l, 'confirm', { uid: data.uid, amount: fmt(amt) }),
       { reply_markup: { inline_keyboard: [[btn(t(l, 'btnConfirm'), 'wc', 'success'), btn(t(l, 'btnCancel'), 'wx', 'danger')]] } });
   }
+  // Add Task / Deposit flow er text input (link, title, quantity, hash...)
+  if ((user.state || '').startsWith('ad_')) return ads.input(m, user);
   // bot er baire onno kichu: kono uttor nai, spam-o gona hoy na
 }
 
@@ -226,7 +231,7 @@ const taskUrl = (tk, uid) => ((tk.type === 'channel' && tk.chat_id) || S('task_c
 async function showTasks(chat, user, mid) {
   const l = user.lang;
   const [{ data: tasks }, { data: rows }] = await Promise.all([
-    sb.from('tasks').select('*').eq('active', true).order('id'),
+    sb.from('tasks').select('*').eq('active', true).or(`owner_id.is.null,owner_id.neq.${user.id}`).order('id'),
     sb.from('user_tasks').select('task_id,last_done,earned').eq('user_id', user.id)
   ]);
   if (!tasks || !tasks.length) return show(chat, mid, t(l, 'noTasks'), []);
@@ -309,6 +314,9 @@ async function onCallback(q) {
   }
   if (await gateBlocked(chat, user, adm)) return A();
 
+  // Add Task / Deposit flow
+  if (d.startsWith('ad:')) return ads.cb(q, user, d.slice(3));
+
   if (d === 'wd') {
     await A();
     if (S('withdraw_enabled') === 'off') return send(chat, t(l, 'wdOff'));
@@ -346,6 +354,7 @@ async function onCallback(q) {
     const id = Number(d.split(':')[1]);
     const { data: tk } = await sb.from('tasks').select('*').eq('id', id).eq('active', true).maybeSingle();
     if (!tk) return A();
+    if (tk.owner_id && Number(tk.owner_id) === user.id) return A(t(l, 'adOwnTask'));
     const rh = tk.reset_hours ?? Number(S('task_reset_hours') ?? 24);
     const { data: ut } = await sb.from('user_tasks').select('last_done').eq('user_id', user.id).eq('task_id', id).maybeSingle();
 
@@ -370,11 +379,23 @@ async function onCallback(q) {
       if (left > 0) return A(t(l, 'clickWait', { time: dur(left) }));
     }
 
+    // user er banano task: limit er slot age claim kore
+    let claimed = false;
+    if (tk.owner_id) {
+      const { data: okc } = await sb.rpc('ad_claim', { tid: id });
+      if (!okc) return A(t(l, 'adFull'));
+      claimed = true;
+    }
+
     const { data: res, error } = await sb.rpc('complete_task', { uid: user.id, tid: id, rew: tk.reward, reset_h: rh });
-    if (error) { console.error(error); return A(t(l, 'notJoined')); }
     const r = Number(res);
-    if (r === -1) return A(t(l, 'already'));
-    if (r > 0) return A(t(l, 'wait', { time: dur(r) }));
+    if (error || r !== 0) {
+      if (claimed) await sb.rpc('ad_release', { tid: id });
+      if (error) { console.error(error); return A(t(l, 'notJoined')); }
+      if (r === -1) return A(t(l, 'already'));
+      return A(t(l, 'wait', { time: dur(r) }));
+    }
+    if (claimed && tk.max_completions && (tk.completions || 0) + 1 >= tk.max_completions) await ads.finished(tk);
     await A(t(l, 'done', { reward: fmt(tk.reward) }));
     return showTasks(chat, user, mid);
   }
