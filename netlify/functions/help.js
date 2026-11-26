@@ -13,10 +13,12 @@ Section gulo:
 📋 Tasks — notun task, edit, on/off, reset time
 ✈️ Force-join — je channel e join na korle bot use kora jabe na
 💳 Withdrawals — pending approve/reject, history, CSV
+💰 Deposits — user der deposit verify kore balance add
+🚀 Orders — user der banano task (Add Task) review
 🎁 Promo codes — user der gift code
 📢 Broadcast — shobai ke message
 📌 Edit texts — bot-er shob lekha + keyboard button-er naam (3 language)
-🔒 Settings — withdraw, referral, security, anti-spam
+🔒 Settings — withdraw, referral, add task, security, anti-spam
 💬 Help — ei guide
 
 Commands:
@@ -38,12 +40,43 @@ Premium emoji dite:
 1) Seraser premium emoji tomar message-e paste koro. Bot auto convert kore nibe.
 2) Ba token lekho: {{fire}} {{money}} (list: Help → Premium emoji)
 
-Keyboard button er naam: btn_bal, btn_tasks, btn_ref, btn_sup, btn_lang.
+Keyboard button er naam: btn_bal, btn_tasks, btn_ads, btn_ref, btn_sup, btn_lang.
 Naam er shurute {{token}} dile oita button icon hoy. Jemon: {{wallet}} Balance
 Notun naam user ra pabe jokhon tara /start dibe ba language bodlabe. Purano keyboard e purano naam o kaj kore.
 
 Mone rekho: ekta language edit korle shudhu oi language er user ra dekhbe. Tin language alada edit korte hobe.
 Edit korar ~20 second por sobar kache update hoy.`
+  },
+  {
+    id: 'ads', title: 'Add Task & Deposit',
+    body: `🚀 ADD TASK (user der task) & DEPOSIT
+
+Keyboard e "Add Task" button. User ekta task banay, onno user ra seta kore reward pay, user er channel/link grow kore.
+
+FLOW: intro + shob condition → Step 1 balance check → type (Channel / Link / Bot) → link → title → quantity → review → Place order.
+• Balance kom hole Next kaj kore na ("You need $x more") ar Deposit button dekhay. Balance enough hole Deposit button thake na.
+• Order er total cost (quantity × price) balance theke hold hoy. Admin approve korle task live. Reject / stop korle refund.
+• Task er limit (quantity) pura hole task auto close, owner message pay.
+• Owner nijer task nijei korte pare na.
+
+SETTINGS: Settings → Add Task & Deposit
+• Min balance to order (default $5)
+• Price per completion (user ja dey, default $0.05)
+• Worker reward per completion (user ja pay, default $0.02). Difference = tomar margin.
+• Min / Max quantity, Min deposit
+• Deposit wallet address ar Network (user ra dekhe, tap kore copy kore)
+• Add Task feature ON/OFF, Auto-approve orders ON/OFF
+CONDITION er lekha: Edit texts → adIntro (3 language). Number gulo Settings theke auto boshe.
+
+DEPOSIT FLOW: user wallet address dekhe → pay kore → "I have paid" → transaction hash → je wallet theke pathiyeche → amount.
+Tomar kache message ashe: Approve / Edit amount / Reject. ⚠️ Block explorer e hash, receiver (tomar wallet), amount, network mille kina dekhe tarpor Approve koro. Ekoi hash dui bar neya jay na.
+Approve korle balance joma hoy ar user message pay.
+⚠️ Wallet address Settings e bhul dile user der taka bhul jaygay jabe. Duibar dekhe save koro.
+
+ORDER REVIEW: Orders section → Pending. Link / title thik ache kina dekho (adult, scam, phishing noy).
+Channel order e user ke bot ke tar channel e ADMIN banate hoy, noile join verify hobe na. 🧪 Test channel access chapo, OK dekhale Approve koro.
+Link / Bot order e user der link click verify hoy (Help → Tasks).
+Live order: Orders → Live → order → ⏹ Stop & refund remaining (baki taka user ke ferot).`
   },
   {
     id: 'gates', title: 'Force-join channel',
@@ -72,25 +105,26 @@ Referral tokhon e valid hobe jokhon referred user shob channel e join kore pass 
     body: `📋 TASKS
 
 Add: Tasks → ➕ Add task → type → title → link → (channel hole @username) → reward.
+(User der banano task alada: Orders section.)
 
 Type:
-- Join channel — bot sotti member kina check kore (bot ke channel e admin banate hobe).
-- Link / X / post — link click verify kore (niche dekho).
-- Start bot — link click verify kore (niche dekho).
+• Join channel — bot sotti member kina check kore (bot ke channel e admin banate hobe).
+• Link / X / post — link click verify kore (niche dekho).
+• Start bot — link click verify kore (niche dekho).
 
 🔗 LINK CLICK VERIFY (channel chara baki task):
 User er button asol link e na giye amader tracker e jay, tarpor asol link e redirect hoy. Tai bot jane user link e click korse kina.
-- Click na kore Check chaple: "age link khulo" bole, reward dey na.
-- Click er por kichu second (default 10s) wait korte hoy, tarpor Check kaj kore.
-- Settings → Withdraw & tasks theke: "Task link-click required" ON/OFF ar wait second bodlano jay.
-- Task card e "Link clicks" dekhabe koto jon click korse.
+• Click na kore Check chaple: "age link khulo" bole, reward dey na.
+• Click er por kichu second (default 10s) wait korte hoy, tarpor Check kaj kore.
+• Settings → Withdraw & tasks theke: "Task link-click required" ON/OFF ar wait second bodlano jay.
+• Task card e "Link clicks" dekhabe koto jon click korse.
 Limit: bot sotti jane na user X e follow korse kina. Shudhu jane link e click korse. Tai reward choto rakho.
 
 Auto emoji: title e Follow / Join / Bot / Post / Gift / Live thakle sundor premium emoji nijei boshe.
 
 Reset time: ekbar kora task abar koto ghonta por korte parbe.
-- Global: Settings → Withdraw & tasks → Task reset (default 24h).
-- Alada: task card → Reset → ghonta lekho. 0 = ekbar-i, global = global follow.
+• Global: Settings → Withdraw & tasks → Task reset (default 24h).
+• Alada: task card → Reset → ghonta lekho. 0 = ekbar-i, global = global follow.
 ⚠️ Channel join task e reset diyo na. User already member, tai abar reward pabe. Tai channel task default e one-time.
 Abar reward nite hole notun click lage.
 Sobar task ekbare reset: Tasks → 🔄 Reset all now.
@@ -109,8 +143,8 @@ Referrer ke kono message jay na.
 
 💰 REWARD STEP (beshi refer korle rate kome):
 Settings → Referral:
-- Referral base reward = full reward ($).
-- Referral reward steps = format "upto:percent", comma diye.
+• Referral base reward = full reward ($).
+• Referral reward steps = format "upto:percent", comma diye.
 Example: 5:70,10:60,20:50,50:45,0:40
   1-5 number valid referral = base er 70%
   6-10 = 60%
@@ -123,8 +157,8 @@ Notun step shudhu notun valid referral e lagu hoy. Ager pawa reward bodlay na.
 
 🛡 REFERRAL SPAM RULE:
 Settings → Referral:
-- Max referrals per window (default 1)
-- Window minutes (default 2)
+• Max referrals per window (default 1)
+• Window minutes (default 2)
 Rule: ekjon referrer er link diye window er moddhe max er beshi notun user ashle extra user "spam referral" hishebe mark hoy. Spam referral e kono reward hoy na, valid count e-o ashe na.
 0 dile rule bondho.
 User tar Referral screen e "Spam (no reward)" count ar rule dekhte pay.
@@ -158,9 +192,9 @@ Admin notification e Flags dekhabe (fp / ip = sondehojonok device).`
 Withdraw er age user ke ekta Mini App e verify korte hoy. Amra save kori: device token (app storage e random ID), browser fingerprint, ar IP (hash kora).
 
 Mode: Settings → Device security
-- OFF — kono check nai.
-- TOKEN (recommended) — ek-i phone/app e arekta account verify korte gele block.
-- STRICT — token + fingerprint mille block. Soman model er phone e vul block hote pare, tai savdhan.
+• OFF — kono check nai.
+• TOKEN (recommended) — ek-i phone/app e arekta account verify korte gele block.
+• STRICT — token + fingerprint mille block. Soman model er phone e vul block hote pare, tai savdhan.
 
 Soft flag: fp/ip mille user card e Flags dekhay, block hoy na (TOKEN mode e). Users → Flagged diye dekho.
 Kono user ke chharo: User card → Reset device, tarpor se abar verify korbe.
@@ -179,12 +213,12 @@ Offense ladder: 1st sotorkobarta, 2nd 1 min, 3rd 3 min, 4th 5 min, 5th 30 min, 6
 24 ghonta bhalo thakle offense mone thake na.
 
 Settings → Anti-spam theke bodlano jay:
-- Presses allowed in the window (default 10)
-- Window length in seconds (default 30)
-- Mute ladder (default 1,3,5,30 minutes)
-- Forget old offenses after (hours)
+• Presses allowed in the window (default 10)
+• Window length in seconds (default 30)
+• Mute ladder (default 1,3,5,30 minutes)
+• Forget old offenses after (hours)
 
-Mone rekho: task Check chapao gone. Onek task thakle limit ektu barao.
+Mone rekho: task Check chapao gone. Add Task er step gulo te button chapao gone, tai onek step e limit ektu barao.
 Restricted user dekhle inline button e "tumi restricted" alert pay, kono kaj hoy na.
 Unmute/Unban: Users → user card → Unmute / Unban. Banned/Muted list: Users → Banned / muted.
 Admin der spam hishab hoy na.
@@ -225,22 +259,26 @@ money wallet uptrend profile trash cancel verified bell letter stop binance warn
     id: 'fix', title: 'Somossha o somadhan',
     body: `🧰 SOMOSSHA O SOMADHAN
 
-- Bot reply dey na → browser e https://api.telegram.org/botTOKEN/getWebhookInfo kholo. last_error_message dekho. 401 = WEBHOOK_SECRET mile nai. 500 = Cloudflare Worker log dekho. Secret change korle Worker e Deploy korte hobe.
-- Premium emoji dekhay na → owner account Premium kina dekho, Telegram update koro. Na hole bot nijei normal emoji dey.
-- Button color/icon dekhay na → Telegram app update koro. Purano desktop version e hoy na.
-- Force-join kaj kore na → bot channel e admin na ba Chat ID vul. Force-join page e 🧪 Test chapo.
-- Task Check hoy na (channel task) → user join kore ni ba bot admin na.
-- Task Check e "age link khulo" → user task button e click kore ni. Settings e wait second beshi kina dekho. SITE_URL secret thik kina dekho (https://earnix-bot.xxx.workers.dev, shesh e / chhara).
-- Withdraw kora jay na → cooldown, min balance, withdrawals OFF, force-join, device verify check koro.
-- User verify te block → Device mode TOKEN kore dao ba Reset device.
-- User restricted hoye gese → Users → card → Unmute. Limit beshi choto hole Settings → Anti-spam e barao.
-- Referral reward pay na → user spam referral hoyeche kina dekho (Users → Spam referrals). Settings → Referral e window / max bodlao.
-- Broadcast e Failed → user bot block korse.
-- Panel button kaj kore na → /admin diye notun panel kholo.
-- Text edit korlam kintu purano dekhay → 20 second por update hoy.
-- Stats e error → SQL migration run korcho kina dekho.
-- Error 1102 (Worker exceeded resource limits) → free plan er 10ms CPU limit. Bhari kaj (boro CSV export) e hoy. Workers Paid e gele jay.
-- Deploy fail → Cloudflare → Worker → Deployments / Builds log e error line dekho. File path thik kina dekho.`
+• Bot reply dey na → browser e https://api.telegram.org/botTOKEN/getWebhookInfo kholo. last_error_message dekho. 401 = WEBHOOK_SECRET mile nai. 500 = Cloudflare Worker log dekho; Supabase pause hoyeche kina dekho. Secret change korle Worker e Deploy korte hobe.
+• Bot dhime → Supabase region (Seoul) ar wrangler.toml er [placement] region mile kina dekho.
+• Premium emoji dekhay na → owner account Premium kina dekho, Telegram update koro. Na hole bot nijei normal emoji dey.
+• Button color/icon dekhay na → Telegram app update koro. Purano desktop version e hoy na.
+• Force-join kaj kore na → bot channel e admin na ba Chat ID vul. Force-join page e 🧪 Test chapo.
+• Task Check hoy na (channel task) → user join kore ni ba bot admin na.
+• Task Check e "age link khulo" → user task button e click kore ni. Settings e wait second beshi kina dekho. SITE_URL secret thik kina dekho (https://earnix-bot.xxx.workers.dev, shesh e / chhara).
+• Add Task button kaj kore na → SQL (Add Task migration) run korcho kina dekho. Settings → Add Task feature ON kina dekho.
+• Deposit e wallet dekhay na → Settings → Add Task & Deposit → Deposit wallet address set koro.
+• User er channel order e join verify hoy na → bot oi channel e admin na. Orders → 🧪 Test channel access.
+• Withdraw kora jay na → cooldown, min balance, withdrawals OFF, force-join, device verify check koro.
+• User verify te block → Device mode TOKEN kore dao ba Reset device.
+• User restricted hoye gese → Users → card → Unmute. Limit beshi choto hole Settings → Anti-spam e barao.
+• Referral reward pay na → user spam referral kina dekho (Users → Spam referrals). Settings → Referral e window / max bodlao.
+• Broadcast e Failed → user bot block korse.
+• Panel button kaj kore na → /admin diye notun panel kholo.
+• Text edit korlam kintu purano dekhay → 20 second por update hoy.
+• Stats e error → SQL migration run korcho kina dekho.
+• Error 1102 (Worker exceeded resource limits) → free plan er 10ms CPU limit. Bhari kaj (boro CSV export) e hoy. Workers Paid e gele jay.
+• Deploy fail → Cloudflare → Worker → Deployments / Builds log e error line dekho. File path thik kina dekho.`
   },
   {
     id: 'tech', title: 'Technical',
@@ -257,11 +295,12 @@ https://api.telegram.org/botTOKEN/setWebhook?url=SITE/.netlify/functions/bot&sec
 Webhook check: .../getWebhookInfo
 
 Database: Supabase → Table editor / SQL editor. Notun SQL migration thakle SQL editor e run koro.
+Supabase free project 7 din idle thakle pause hoy: Dashboard → Resume project.
 Backup: Supabase → Database → Backups, ba panel theke CSV export.
 
 Files:
 worker.js wrangler.toml
-netlify/functions/ bot.js admin.js core.js go.js help.js i18n.js emoji.js verify.js
+netlify/functions/ bot.js admin.js ads.js core.js go.js help.js i18n.js emoji.js verify.js
 public/verify.html`
   }
 ];
