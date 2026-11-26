@@ -1,4 +1,5 @@
 const C = require('./core');
+const ads = require('./ads'); // ads.js notun text key gulo T te jog kore, tai KEYS er age load hobe
 const { sb, API, tg, send, sendRaw, show, btn, t, S, setSetting, setText, delText, hasText, rawText, fmt, dur, cleanTitle, setState, countOf, getGates, gateKb, parseTiers, refReward, DEFAULT_TIERS, creditReferral } = C;
 const { T, NAMES, LANGS } = require('./i18n');
 const { taskIcon, slotIcon } = require('./emoji');
@@ -28,21 +29,37 @@ const SET = {
   ref_tiers: ['Referral reward steps (upto:percent)', 'tiers'],
   ref_spam_max: ['Referral spam: max new referrals that can earn per window (0 = rule off)', 'int0'],
   ref_spam_minutes: ['Referral spam: window length (minutes)', 'num'],
+  ad_min_balance: ['Add Task: minimum balance to order ($)', 'num'],
+  ad_price: ['Add Task: price per completion ($, what the user pays)', 'num'],
+  ad_reward: ['Add Task: reward per completion ($, what workers get)', 'num'],
+  ad_min_qty: ['Add Task: minimum completions per order', 'int'],
+  ad_max_qty: ['Add Task: maximum completions per order', 'int'],
+  dep_min: ['Deposit: minimum amount ($)', 'num'],
+  dep_wallet: ['Deposit: wallet address users send to', 'wallet'],
+  dep_network: ['Deposit: network / coin label (shown to users)', 'text'],
   spam_threshold: ['Spam: button/command presses allowed in the window', 'int'],
   spam_window_sec: ['Spam: window length (seconds)', 'num'],
   spam_ladder: ['Spam: mute ladder in minutes (e.g. 1,3,5,30)', 'list'],
   spam_decay_hours: ['Spam: forget old offenses after (hours)', 'num']
 };
-const DEFV = { ref_tiers: `${DEFAULT_TIERS} (default)`, ref_spam_max: '1 (default)', ref_spam_minutes: '2 (default)' };
+const DEFV = {
+  ref_tiers: `${DEFAULT_TIERS} (default)`, ref_spam_max: '1 (default)', ref_spam_minutes: '2 (default)',
+  ad_min_balance: '5 (default)', ad_price: '0.05 (default)', ad_reward: '0.02 (default)', ad_min_qty: '50 (default)', ad_max_qty: '5000 (default)',
+  dep_min: '5 (default)', dep_wallet: '(NOT SET)', dep_network: 'USDT (BEP20) (default)'
+};
 const HINT = {
   ref_tiers: '\n\nFormat: upto:percent, comma separated.\nExample: 5:70,10:60,20:50,0:40\n= referrals 1-5 pay 70%, 6-10 pay 60%, 11-20 pay 50%, 21+ pay 40% of the base reward (0 = no limit, only as the last entry).\nFull reward every time: 0:100\nUsers see these steps in their Referral screen.',
   ref_spam_max: '\n\nHow many NEW referrals per window can earn.\n1 = only one per window. Extra ones are marked as spam and earn nothing.\n0 = this rule is OFF.',
-  ref_spam_minutes: '\n\nWindow length in minutes, e.g. 2.'
+  ref_spam_minutes: '\n\nWindow length in minutes, e.g. 2.',
+  ad_price: '\n\nWhat the user pays per completed task. Keep it HIGHER than the worker reward, the difference is your margin.',
+  ad_reward: '\n\nWhat workers earn per completed task. It cannot be higher than the price (it is capped).',
+  dep_wallet: '\n\nUsers see this address and can tap to copy it. Double-check every character: a wrong address means lost funds. Changing it affects new deposits only.'
 };
 const GROUPS = {
   gen: ['{{info}} General', ['support_link'], ['maintenance', 'withdraw_enabled', 'gate_enabled']],
   wd: ['{{wallet}} Withdraw & tasks', ['min_withdraw', 'max_withdraw', 'withdraw_cooldown_hours', 'task_reset_hours', 'task_min_seconds'], ['task_click_required']],
   ref: ['{{follow}} Referral', ['ref_reward', 'ref_tiers', 'ref_spam_max', 'ref_spam_minutes'], []],
+  ads: ['{{rocket}} Add Task & Deposit', ['ad_min_balance', 'ad_price', 'ad_reward', 'ad_min_qty', 'ad_max_qty', 'dep_min', 'dep_wallet', 'dep_network'], ['ads_enabled', 'ad_auto_approve']],
   sec: ['{{lock}} Device security', [], []],
   spam: ['{{stop}} Anti-spam', ['spam_threshold', 'spam_window_sec', 'spam_ladder', 'spam_decay_hours'], []]
 };
@@ -52,17 +69,22 @@ const TOG = {
   maintenance: ['Maintenance mode', 'off'],
   withdraw_enabled: ['Withdrawals', 'on'],
   gate_enabled: ['Force-join', 'on'],
-  task_click_required: ['Task link-click required', 'on']
+  task_click_required: ['Task link-click required', 'on'],
+  ads_enabled: ['Add Task feature', 'on'],
+  ad_auto_approve: ['Auto-approve user orders', 'off']
 };
 const MODES = { off: 'OFF (no device check)', token: 'TOKEN (one device/app = one account, recommended)', strict: 'STRICT (token + fingerprint, may block identical phones)' };
 
 // ---------- Screens ----------
 async function home(chat, mid) {
   const pend = await countOf(sb.from('withdrawals').select('id', { count: 'exact', head: true }).eq('status', 'pending'));
+  const dep = await countOf(sb.from('deposits').select('id', { count: 'exact', head: true }).eq('status', 'pending'));
+  const ord = await countOf(sb.from('tasks').select('id', { count: 'exact', head: true }).not('owner_id', 'is', null).eq('status', 'pending'));
   return show(chat, mid, '{{info}} Admin Panel\n\nControl everything from here.\nNew? Open {{chat}} Help for the full A-Z guide.', [
     [btn('{{uptrend}} Stats', 'a:st', 'primary'), btn('{{profile}} Users', 'a:u', 'primary')],
     [btn('{{tasks}} Tasks', 'a:t', 'primary'), btn('{{telegram}} Force-join', 'a:g', 'primary')],
     [btn(`{{wallet}} Withdrawals${pend ? ` (${pend})` : ''}`, 'a:w', pend ? 'success' : 'primary'), btn('{{gift}} Promo codes', 'a:p')],
+    [btn(`{{money}} Deposits${dep ? ` (${dep})` : ''}`, 'a:dp', dep ? 'success' : 'primary'), btn(`{{rocket}} Orders${ord ? ` (${ord})` : ''}`, 'a:od', ord ? 'success' : 'primary')],
     [btn('{{announce}} Broadcast', 'a:b'), btn('{{pin}} Edit texts', 'a:tx')],
     [btn('{{lock}} Settings', 'a:s'), btn('{{chat}} Help', 'a:h', 'success')]
   ]);
@@ -87,7 +109,7 @@ async function taskList(c, mid) {
   const { data } = await sb.from('tasks').select('*').order('id');
   const rows = (data || []).map((tk) => [btn(`{{${taskIcon(tk)}}} ${tk.active ? '' : '(off) '}#${tk.id} ${cleanTitle(tk.title).slice(0, 28)} ($${tk.reward})`, `a:t:${tk.id}`)]);
   rows.push([btn('➕ Add task', 'a:ta', 'success'), btn('🔄 Reset all now', 'a:tra', 'danger')], BACK);
-  return show(c, mid, `{{tasks}} Tasks (${(data || []).length})\n\nTap a task to edit.\nGlobal reset: ${S('task_reset_hours') ?? 24}h`, rows);
+  return show(c, mid, `{{tasks}} Tasks (${(data || []).length})\n\nTap a task to edit. User orders are managed in Orders.\nGlobal reset: ${S('task_reset_hours') ?? 24}h`, rows);
 }
 async function taskCard(c, mid, id) {
   const { data: tk } = await sb.from('tasks').select('*').eq('id', id).maybeSingle();
@@ -106,7 +128,7 @@ async function taskCard(c, mid, id) {
     [btn('⬅️ Back', 'a:t')]
   ];
   return show(c, mid,
-    `{{${taskIcon(tk)}}} Task #${id}\n\nType: ${tk.type}\nTitle: ${tk.title}\nLink: ${tk.link}\n${tk.type === 'channel' ? `Channel: ${tk.chat_id || '-'}\n` : ''}Reward: $${tk.reward}\nReset: ${resetTxt(tk)}\nVerify: ${byClick ? ((S('task_click_required') ?? 'on') === 'off' ? 'none (Check = reward)' : `link click + ${S('task_min_seconds') ?? 10}s wait`) : 'channel membership'}\nStatus: ${tk.active ? 'active' : 'off'}\nLink clicks: ${clicks} · Completed by: ${done} users`, rows);
+    `{{${taskIcon(tk)}}} Task #${id}\n\nType: ${tk.type}\nTitle: ${tk.title}\nLink: ${tk.link}\n${tk.type === 'channel' ? `Channel: ${tk.chat_id || '-'}\n` : ''}Reward: $${tk.reward}\nReset: ${resetTxt(tk)}\nVerify: ${byClick ? ((S('task_click_required') ?? 'on') === 'off' ? 'none (Check = reward)' : `link click + ${S('task_min_seconds') ?? 10}s wait`) : 'channel membership'}\nStatus: ${tk.active ? 'active' : 'off'}${tk.owner_id ? `\nUser order by ${tk.owner_id}: ${tk.completions}/${tk.max_completions} (${tk.status})` : ''}\nLink clicks: ${clicks} · Completed by: ${done} users`, rows);
 }
 
 // ----- Force-join gates -----
@@ -228,7 +250,7 @@ async function textView(c, mid, lang, key) {
 async function settings(c, mid, g) {
   if (!g) {
     return show(c, mid, '{{lock}} Settings\n\nPick a group:', [
-      [btn(GROUPS.gen[0], 'a:s:gen')], [btn(GROUPS.wd[0], 'a:s:wd')], [btn(GROUPS.ref[0], 'a:s:ref')], [btn(GROUPS.sec[0], 'a:s:sec')], [btn(GROUPS.spam[0], 'a:s:spam')], BACK]);
+      [btn(GROUPS.gen[0], 'a:s:gen')], [btn(GROUPS.wd[0], 'a:s:wd')], [btn(GROUPS.ref[0], 'a:s:ref')], [btn(GROUPS.ads[0], 'a:s:ads')], [btn(GROUPS.sec[0], 'a:s:sec')], [btn(GROUPS.spam[0], 'a:s:spam')], BACK]);
   }
   const [title, keys, togs] = GROUPS[g];
   const val = (k) => S(k) ?? DEFV[k] ?? '-';
@@ -241,6 +263,7 @@ async function settings(c, mid, g) {
     rows.push([btn(`${good ? '{{verified}}' : '{{warn}}'} ${TOG[k][0]}: ${on ? 'ON' : 'OFF'} (tap to switch)`, `a:tg:${k}:${g}`, good ? 'success' : 'danger')]);
   }
   if (g === 'ref') rows.push([btn('{{uptrend}} Referral payout preview', 'a:rtp', 'primary')]);
+  if (g === 'ads') lines.push('\nCondition wording: Edit texts → adIntro');
   if (g === 'sec') {
     lines.push(`Device check mode: ${MODES[S('device_mode') || 'token']}`);
     rows.push([btn('🔁 Change device mode', 'a:dm', 'primary')]);
@@ -276,6 +299,9 @@ async function cb(q, user, path) {
   const c = q.message.chat.id, mid = q.message.message_id;
   const [sec, a1, a2] = path.split(':');
   const ask = async (state, data, text) => { await setState(user.id, state, data); return askMsg(c, text); };
+
+  // Deposits (dp*) ar user orders (od*) ads.js e
+  if (/^(dp[a-z]?|od[a-z]?)$/.test(sec)) return ads.adminCb(q, user, sec, a1, a2);
 
   switch (sec) {
     case 'home': case 'x': await setState(user.id, null); return home(c, mid);
@@ -456,6 +482,7 @@ async function cb(q, user, path) {
 // ====================== TEXT INPUT ======================
 async function input(m, user) {
   const c = m.chat.id, d = user.state_data || {};
+  if (user.state === 'a_dp_amt') return ads.adminInput(m, user);
   const text = fromEntities(m);
   const done = () => setState(user.id, null);
   const bad = (msg) => send(c, `{{warn}} ${msg}`);
@@ -547,6 +574,10 @@ async function input(m, user) {
       if (type === 'tiers') {
         if (!parseTiers(text)) return bad('Wrong format. Example: 5:70,10:60,20:50,0:40\n(limits must go up, percent 0-100, and only the LAST entry may use 0)');
         v = text.replace(/\s+/g, '');
+      }
+      if (type === 'wallet') {
+        v = text.replace(/\s+/g, '');
+        if (!/^[A-Za-z0-9]{20,100}$/.test(v)) return bad('That does not look like a wallet address (letters and numbers only, 20-100 characters).');
       }
       await setSetting(d.key, v);
       await done();
