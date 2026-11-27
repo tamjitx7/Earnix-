@@ -1,5 +1,6 @@
 const C = require('./core');
-const ads = require('./ads'); // ads.js notun text key gulo T te jog kore, tai KEYS er age load hobe
+const ads = require('./ads'); // ads.js ar live.js notun text key gulo T te jog kore, tai KEYS er age load hobe
+const live = require('./live');
 const { sb, API, tg, send, sendRaw, show, btn, t, S, setSetting, setText, delText, hasText, rawText, fmt, dur, cleanTitle, setState, countOf, getGates, gateKb, parseTiers, refReward, DEFAULT_TIERS, creditReferral } = C;
 const { T, NAMES, LANGS } = require('./i18n');
 const { taskIcon, slotIcon } = require('./emoji');
@@ -22,7 +23,8 @@ const SET = {
   support_link: ['Support link', 'text'],
   min_withdraw: ['Min withdraw ($)', 'num'],
   max_withdraw: ['Max withdraw ($)', 'num'],
-  withdraw_cooldown_hours: ['Withdraw cooldown (hours, 0 = off)', 'num'],
+  withdraw_cooldown_hours: ['Withdraw cooldown (hours between two withdrawals, 0 = off)', 'num'],
+  withdraw_daily_max: ['Max withdrawals per 24 hours (0 = unlimited)', 'int0'],
   task_reset_hours: ['Task reset (hours, 0 = one-time)', 'num'],
   task_min_seconds: ['Task: seconds to wait after link click before Check works', 'num'],
   ref_reward: ['Referral base reward ($)', 'num'],
@@ -37,6 +39,9 @@ const SET = {
   dep_min: ['Deposit: minimum amount ($)', 'num'],
   dep_wallet: ['Deposit: wallet address users send to', 'wallet'],
   dep_network: ['Deposit: network / coin label (shown to users)', 'text'],
+  live_price: ['Live chat: price per session ($, taken from user balance)', 'num'],
+  live_expire_hours: ['Live chat: auto-close after no activity (hours, 0 = never)', 'num'],
+  live_rate_per_min: ['Live chat: max user messages per minute (0 = unlimited)', 'int0'],
   spam_threshold: ['Spam: button/command presses allowed in the window', 'int'],
   spam_window_sec: ['Spam: window length (seconds)', 'num'],
   spam_ladder: ['Spam: mute ladder in minutes (e.g. 1,3,5,30)', 'list'],
@@ -44,22 +49,27 @@ const SET = {
 };
 const DEFV = {
   ref_tiers: `${DEFAULT_TIERS} (default)`, ref_spam_max: '1 (default)', ref_spam_minutes: '2 (default)',
+  withdraw_daily_max: '3 (default)',
   ad_min_balance: '5 (default)', ad_price: '0.05 (default)', ad_reward: '0.02 (default)', ad_min_qty: '50 (default)', ad_max_qty: '5000 (default)',
-  dep_min: '5 (default)', dep_wallet: '(NOT SET)', dep_network: 'USDT (BEP20) (default)'
+  dep_min: '5 (default)', dep_wallet: '(NOT SET)', dep_network: 'USDT (BEP20) (default)',
+  live_price: '0.1 (default)', live_expire_hours: '24 (default)', live_rate_per_min: '15 (default)'
 };
 const HINT = {
   ref_tiers: '\n\nFormat: upto:percent, comma separated.\nExample: 5:70,10:60,20:50,0:40\n= referrals 1-5 pay 70%, 6-10 pay 60%, 11-20 pay 50%, 21+ pay 40% of the base reward (0 = no limit, only as the last entry).\nFull reward every time: 0:100\nUsers see these steps in their Referral screen.',
   ref_spam_max: '\n\nHow many NEW referrals per window can earn.\n1 = only one per window. Extra ones are marked as spam and earn nothing.\n0 = this rule is OFF.',
   ref_spam_minutes: '\n\nWindow length in minutes, e.g. 2.',
+  withdraw_daily_max: '\n\nRolling 24 hours (not calendar day). Example: 3 = a user can request up to 3 withdrawals in any 24-hour period. Rejected requests do not count. 0 = no daily limit.',
   ad_price: '\n\nWhat the user pays per completed task. Keep it HIGHER than the worker reward, the difference is your margin.',
   ad_reward: '\n\nWhat workers earn per completed task. It cannot be higher than the price (it is capped).',
-  dep_wallet: '\n\nUsers see this address and can tap to copy it. Double-check every character: a wrong address means lost funds. Changing it affects new deposits only.'
+  dep_wallet: '\n\nUsers see this address and can tap to copy it. Double-check every character: a wrong address means lost funds. Changing it affects new deposits only.',
+  live_price: '\n\nCharged once when a live chat starts. The chat then stays open (no extra cost) until an admin ends it. Example: 0.1 or 0.2. 0 = free.'
 };
 const GROUPS = {
   gen: ['{{info}} General', ['support_link'], ['maintenance', 'withdraw_enabled', 'gate_enabled']],
-  wd: ['{{wallet}} Withdraw & tasks', ['min_withdraw', 'max_withdraw', 'withdraw_cooldown_hours', 'task_reset_hours', 'task_min_seconds'], ['task_click_required']],
+  wd: ['{{wallet}} Withdraw & tasks', ['min_withdraw', 'max_withdraw', 'withdraw_cooldown_hours', 'withdraw_daily_max', 'task_reset_hours', 'task_min_seconds'], ['task_click_required']],
   ref: ['{{follow}} Referral', ['ref_reward', 'ref_tiers', 'ref_spam_max', 'ref_spam_minutes'], []],
   ads: ['{{rocket}} Add Task & Deposit', ['ad_min_balance', 'ad_price', 'ad_reward', 'ad_min_qty', 'ad_max_qty', 'dep_min', 'dep_wallet', 'dep_network'], ['ads_enabled', 'ad_auto_approve']],
+  live: ['{{chat}} Live chat', ['live_price', 'live_expire_hours', 'live_rate_per_min'], ['live_enabled']],
   sec: ['{{lock}} Device security', [], []],
   spam: ['{{stop}} Anti-spam', ['spam_threshold', 'spam_window_sec', 'spam_ladder', 'spam_decay_hours'], []]
 };
@@ -71,7 +81,8 @@ const TOG = {
   gate_enabled: ['Force-join', 'on'],
   task_click_required: ['Task link-click required', 'on'],
   ads_enabled: ['Add Task feature', 'on'],
-  ad_auto_approve: ['Auto-approve user orders', 'off']
+  ad_auto_approve: ['Auto-approve user orders', 'off'],
+  live_enabled: ['Live chat feature', 'on']
 };
 const MODES = { off: 'OFF (no device check)', token: 'TOKEN (one device/app = one account, recommended)', strict: 'STRICT (token + fingerprint, may block identical phones)' };
 
@@ -80,11 +91,13 @@ async function home(chat, mid) {
   const pend = await countOf(sb.from('withdrawals').select('id', { count: 'exact', head: true }).eq('status', 'pending'));
   const dep = await countOf(sb.from('deposits').select('id', { count: 'exact', head: true }).eq('status', 'pending'));
   const ord = await countOf(sb.from('tasks').select('id', { count: 'exact', head: true }).not('owner_id', 'is', null).eq('status', 'pending'));
+  const lc = await countOf(sb.from('live_chats').select('id', { count: 'exact', head: true }).eq('status', 'open'));
   return show(chat, mid, '{{info}} Admin Panel\n\nControl everything from here.\nNew? Open {{chat}} Help for the full A-Z guide.', [
     [btn('{{uptrend}} Stats', 'a:st', 'primary'), btn('{{profile}} Users', 'a:u', 'primary')],
     [btn('{{tasks}} Tasks', 'a:t', 'primary'), btn('{{telegram}} Force-join', 'a:g', 'primary')],
     [btn(`{{wallet}} Withdrawals${pend ? ` (${pend})` : ''}`, 'a:w', pend ? 'success' : 'primary'), btn('{{gift}} Promo codes', 'a:p')],
     [btn(`{{money}} Deposits${dep ? ` (${dep})` : ''}`, 'a:dp', dep ? 'success' : 'primary'), btn(`{{rocket}} Orders${ord ? ` (${ord})` : ''}`, 'a:od', ord ? 'success' : 'primary')],
+    [btn(`{{chat}} Live chats${lc ? ` (${lc})` : ''}`, 'a:lc', lc ? 'success' : 'primary')],
     [btn('{{announce}} Broadcast', 'a:b'), btn('{{pin}} Edit texts', 'a:tx')],
     [btn('{{lock}} Settings', 'a:s'), btn('{{chat}} Help', 'a:h', 'success')]
   ]);
@@ -167,7 +180,7 @@ async function userCard(c, mid, uid) {
   const muted = u.mute_until && new Date(u.mute_until) > new Date();
   const refState = u.ref_spam ? 'SPAM' : u.ref_valid ? 'valid' : 'pending';
   return show(c, mid,
-    `{{profile}} ${u.first_name || '-'} ${u.username ? '@' + u.username : ''}\nID: ${u.id} · Lang: ${u.lang || '-'}\n\n{{money}} Balance: $${fmt(u.balance)}\n{{uptrend}} Earned: $${fmt(u.total_earned)}\n{{wallet}} Withdrawn: $${fmt(u.total_withdrawn)}\n{{follow}} Referrals: ${r.total} (valid ${r.valid}, spam ${r.spam || 0}, earned $${fmt(r.earned)})${u.referred_by ? `\nInvited by: ${u.referred_by} (${refState})` : ''}\n{{tasks}} Tasks done: ${tasks}\n{{telegram}} Force-join passed: ${u.gate_ok ? 'yes' : 'no'}\n{{lock}} Device: ${u.device_verified ? 'verified' : 'not verified'}${u.dup_flag ? `\n{{warn}} Flags: ${u.dup_flag}` : ''}\n{{stop}} Banned: ${u.banned ? 'yes' : 'no'}${muted ? ` · muted until ${new Date(u.mute_until).toISOString().slice(11, 16)} UTC` : ''}\nSpam offenses: ${u.offenses || 0}\n{{time}} Joined: ${String(u.created_at).slice(0, 10)}`,
+    `{{profile}} ${u.first_name || '-'} ${u.username ? '@' + u.username : ''}\nID: ${u.id} · Lang: ${u.lang || '-'}\n\n{{money}} Balance: $${fmt(u.balance)}\n{{uptrend}} Earned: $${fmt(u.total_earned)}\n{{wallet}} Withdrawn: $${fmt(u.total_withdrawn)}\n{{follow}} Referrals: ${r.total} (valid ${r.valid}, spam ${r.spam || 0}, earned $${fmt(r.earned)})${u.referred_by ? `\nInvited by: ${u.referred_by} (${refState})` : ''}\n{{tasks}} Tasks done: ${tasks}\n{{telegram}} Force-join passed: ${u.gate_ok ? 'yes' : 'no'}\n{{lock}} Device: ${u.device_verified ? 'verified' : 'not verified'}${u.dup_flag ? `\n{{warn}} Flags: ${u.dup_flag}` : ''}\n{{stop}} Banned: ${u.banned ? 'yes' : 'no'}${muted ? ` · muted until ${new Date(u.mute_until).toISOString().slice(11, 16)} UTC` : ''}\nSpam offenses: ${u.offenses || 0}${u.live_chat ? `\n{{chat}} Live chat open: #${u.live_chat}` : ''}\n{{time}} Joined: ${String(u.created_at).slice(0, 10)}`,
     [
       [btn('{{money}} Add balance', `a:ub:${uid}:+`, 'success'), btn('➖ Remove', `a:ub:${uid}:-`, 'danger')],
       [btn(u.banned ? '{{verified}} Unban' : '{{stop}} Ban', `a:ubn:${uid}`, u.banned ? 'success' : 'danger'), btn('🔄 Reset device', `a:ur:${uid}`)],
@@ -250,7 +263,7 @@ async function textView(c, mid, lang, key) {
 async function settings(c, mid, g) {
   if (!g) {
     return show(c, mid, '{{lock}} Settings\n\nPick a group:', [
-      [btn(GROUPS.gen[0], 'a:s:gen')], [btn(GROUPS.wd[0], 'a:s:wd')], [btn(GROUPS.ref[0], 'a:s:ref')], [btn(GROUPS.ads[0], 'a:s:ads')], [btn(GROUPS.sec[0], 'a:s:sec')], [btn(GROUPS.spam[0], 'a:s:spam')], BACK]);
+      [btn(GROUPS.gen[0], 'a:s:gen')], [btn(GROUPS.wd[0], 'a:s:wd')], [btn(GROUPS.ref[0], 'a:s:ref')], [btn(GROUPS.ads[0], 'a:s:ads')], [btn(GROUPS.live[0], 'a:s:live')], [btn(GROUPS.sec[0], 'a:s:sec')], [btn(GROUPS.spam[0], 'a:s:spam')], BACK]);
   }
   const [title, keys, togs] = GROUPS[g];
   const val = (k) => S(k) ?? DEFV[k] ?? '-';
@@ -264,6 +277,7 @@ async function settings(c, mid, g) {
   }
   if (g === 'ref') rows.push([btn('{{uptrend}} Referral payout preview', 'a:rtp', 'primary')]);
   if (g === 'ads') lines.push('\nCondition wording: Edit texts → adIntro');
+  if (g === 'live') lines.push('\nIntro wording: Edit texts → lvIntro');
   if (g === 'sec') {
     lines.push(`Device check mode: ${MODES[S('device_mode') || 'token']}`);
     rows.push([btn('🔁 Change device mode', 'a:dm', 'primary')]);
@@ -300,8 +314,9 @@ async function cb(q, user, path) {
   const [sec, a1, a2] = path.split(':');
   const ask = async (state, data, text) => { await setState(user.id, state, data); return askMsg(c, text); };
 
-  // Deposits (dp*) ar user orders (od*) ads.js e
+  // Deposits (dp*) ar user orders (od*) ads.js e, Live chat (lc*) live.js e
   if (/^(dp[a-z]?|od[a-z]?)$/.test(sec)) return ads.adminCb(q, user, sec, a1, a2);
+  if (/^lc[a-z]?$/.test(sec)) return live.adminCb(q, user, sec, a1);
 
   switch (sec) {
     case 'home': case 'x': await setState(user.id, null); return home(c, mid);
