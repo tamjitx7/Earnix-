@@ -4,35 +4,39 @@ const { EM, fx, plain, parseBtn, taskIcon } = require('./emoji');
 const { T, NAMES, LANGS } = require('./i18n');
 const admin = require('./admin');
 const ads = require('./ads');
+const live = require('./live');
 
 const nm = (u) => u.first_name || u.username || 'friend';
+const esc = (s) => String(s).replace(/\{\{/g, '{\u200b{');
 
 // ---------- Keyboards ----------
-const STY = { bal: 'primary', tasks: 'success', ads: 'primary', ref: 'success', sup: 'danger', lang: 'primary' }; // primary=blue success=green danger=red
+// Layout: [Profile][Tasks] / [Language][Live chat] / [Admin Panel] (admin) / [Add task] (shobar shesh)
+const STY = { profile: 'primary', tasks: 'success', lang: 'primary', live: 'danger', ads: 'primary' }; // primary=blue success=green danger=red
 function mk(l, k) {
   const p = parseBtn(t(l, 'btn_' + k));
   return { text: p.text, style: STY[k], ...(p.icon ? { icon_custom_emoji_id: p.icon } : {}) };
 }
 const menuKb = (l, adm) => ({
   keyboard: [
-    [mk(l, 'bal'), mk(l, 'tasks')],
-    [mk(l, 'ads')],
-    [mk(l, 'ref'), mk(l, 'sup')],
-    [mk(l, 'lang'), ...(adm ? [{ text: 'Admin Panel', style: 'primary', icon_custom_emoji_id: EM.lock[0] }] : [])]
+    [mk(l, 'profile'), mk(l, 'tasks')],
+    [mk(l, 'lang'), mk(l, 'live')],
+    ...(adm ? [[{ text: 'Admin Panel', style: 'primary', icon_custom_emoji_id: EM.lock[0] }]] : []),
+    [mk(l, 'ads')]
   ],
   resize_keyboard: true
 });
 const LSTY = { ar: 'primary', ru: 'success', en: 'danger' }; // blue, green, red
 const langInline = () => ({ inline_keyboard: LANGS.map((k) => [btn(NAMES[k], `lg:${k}`, LSTY[k])]) });
 
-// button text milay (emoji bad diye). Edit kora naam ar default naam duitai chole.
+// button text milay (emoji bad diye). Purano keyboard er bal / ref / sup button o kaj kore.
+const ACTION_KEYS = ['profile', 'tasks', 'live', 'ads', 'lang', 'bal', 'ref', 'sup'];
 function actionOf(text) {
   const x = norm(text);
   if (!x) return null;
-  for (const k of ['bal', 'tasks', 'ads', 'ref', 'sup', 'lang'])
+  for (const k of ACTION_KEYS)
     for (const l of LANGS)
       for (const label of [t(l, 'btn_' + k), T['btn_' + k][l]])
-        if (norm(parseBtn(label).text) === x) return k;
+        if (norm(parseBtn(label).text) === x) return k === 'sup' ? 'live' : k;
   return null;
 }
 
@@ -127,7 +131,8 @@ async function flood(user, chat, l) {
   return blocked;
 }
 
-// ---------- Withdraw cooldown ----------
+// ---------- Withdraw limits ----------
+// ekta withdraw er por next withdraw er cooldown (seconds left, 0 = ok)
 async function cooldownLeft(uid) {
   const hours = Number(S('withdraw_cooldown_hours') ?? 6);
   if (!hours) return 0;
@@ -136,6 +141,19 @@ async function cooldownLeft(uid) {
   const left = new Date(data[0].created_at).getTime() + hours * 3600000 - Date.now();
   return left > 0 ? Math.ceil(left / 1000) : 0;
 }
+// rolling 24 ghonta e sorboccho koyta withdraw (seconds left, 0 = ok)
+async function dailyLeft(uid) {
+  const max = Number(S('withdraw_daily_max') ?? 3);
+  if (!max) return 0;
+  const since = new Date(Date.now() - 86400000).toISOString();
+  const { data } = await sb.from('withdrawals').select('created_at').eq('user_id', uid).neq('status', 'rejected').gte('created_at', since).order('created_at', { ascending: false }).limit(max);
+  if (!data || data.length < max) return 0;
+  const left = new Date(data[max - 1].created_at).getTime() + 86400000 - Date.now();
+  return left > 0 ? Math.ceil(left / 1000) : 0;
+}
+const limitMsg = (l, key, left) => (key === 'daily'
+  ? t(l, 'wdDaily', { max: S('withdraw_daily_max') ?? 3, time: dur(left) })
+  : t(l, 'cooldown', { time: dur(left), hours: S('withdraw_cooldown_hours') ?? 6 }));
 
 exports.handler = async (event) => {
   if (event.headers['x-telegram-bot-api-secret-token'] !== process.env.WEBHOOK_SECRET) return { statusCode: 401 };
@@ -155,11 +173,17 @@ async function onMessage(m) {
   const st = raw.match(/^\/start(?:\s+ref_(\d+))?/);
   const user = await getUser(m.from, st && st[1] ? Number(st[1]) : null);
   const chat = m.chat.id, adm = isAdmin(user.id), l = user.lang || 'ar';
+  const maint = !adm && S('maintenance') === 'on';
 
   if (user.banned) return send(chat, t(l, 'banned'));
   if (!adm && user.mute_until && new Date(user.mute_until) > new Date()) return;
-  if (!m.text) return; // sticker, photo etc: kichu hoy na
-  if (!adm && S('maintenance') === 'on') return send(chat, t(l, 'maint'));
+
+  // Admin Telegram Reply diye live chat e uttor dile
+  if (adm && m.reply_to_message && (await live.adminReply(m))) return;
+
+  // sticker, photo, file: live chat khola thakle admin er kache jay, nahole kichu hoy na
+  if (!m.text) { if (user.live_chat && !maint) await live.relay(m, user); return; }
+  if (maint) return send(chat, t(l, 'maint'));
   const text = raw.trim();
 
   // Admin emoji-only message pathale premium emoji ID bole dey
@@ -195,14 +219,11 @@ async function onMessage(m) {
     await setState(user.id, null);
     if (act === 'lang') return send(chat, t(l, 'chooseLang'), { reply_markup: langInline() });
     if (act === 'ads') return ads.intro(chat, user, null);
-    if (act === 'bal') return send(chat, t(l, 'bal', { balance: fmt(user.balance), earned: fmt(user.total_earned), withdrawn: fmt(user.total_withdrawn) }),
-      { reply_markup: { inline_keyboard: [[btn(t(l, 'withdraw'), 'wd', 'success')]] } });
+    if (act === 'live') return live.intro(chat, user, null);
+    if (act === 'profile') return showProfile(chat, user, null);
+    if (act === 'bal') return showBalance(chat, user, null);
     if (act === 'tasks') return showTasks(chat, user, null);
-    if (act === 'ref') return showRef(chat, user);
-    if (act === 'sup') {
-      const link = S('support_link') || 'https://t.me';
-      return send(chat, t(l, 'sup'), { reply_markup: { inline_keyboard: [[ubtn(t(l, 'supBtn'), link, 'primary')]] } });
-    }
+    if (act === 'ref') return showRef(chat, user, null);
   }
 
   if (user.state === 'w_uid') {
@@ -221,7 +242,41 @@ async function onMessage(m) {
   }
   // Add Task / Deposit flow er text input (link, title, quantity, hash...)
   if ((user.state || '').startsWith('ad_')) return ads.input(m, user);
+  // Live chat khola thakle free text admin er kache jay
+  if (user.live_chat && !text.startsWith('/')) { await live.relay(m, user); return; }
   // bot er baire onno kichu: kono uttor nai, spam-o gona hoy na
+}
+
+// ---------- Profile / Balance / Referral ----------
+async function showProfile(chat, user, mid) {
+  const l = user.lang;
+  return show(chat, mid, t(l, 'profile', { name: esc(nm(user)), id: user.id, balance: fmt(user.balance), earned: fmt(user.total_earned), withdrawn: fmt(user.total_withdrawn) }), [
+    [btn(t(l, 'btn_bal'), 'pf:bal', 'primary'), btn(t(l, 'btn_ref'), 'pf:ref', 'success')]
+  ]);
+}
+async function showBalance(chat, user, mid) {
+  const l = user.lang;
+  return show(chat, mid, t(l, 'bal', { balance: fmt(user.balance), earned: fmt(user.total_earned), withdrawn: fmt(user.total_withdrawn) }), [
+    [btn(t(l, 'withdraw'), 'wd', 'success')],
+    [btn(t(l, 'adBackBtn'), 'pf:home')]
+  ]);
+}
+async function showRef(chat, user, mid) {
+  const l = user.lang;
+  const { data: s } = await sb.rpc('ref_stats', { uid: user.id });
+  const r = s || { total: 0, valid: 0, spam: 0, earned: 0 };
+  const spamN = Number(r.spam) || 0;
+  const link = `https://t.me/${BOT_USERNAME}?start=ref_${user.id}`;
+  const share = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(plain(t(l, 'refShareText')))}`;
+  const base = Number(S('ref_reward')) || 0;
+  const tiers = parseTiers(S('ref_tiers')) || parseTiers(DEFAULT_TIERS);
+  const maxN = Number(S('ref_spam_max') ?? 1), win = Number(S('ref_spam_minutes') ?? 2);
+  const rule = maxN > 0 && win > 0 ? '\n\n' + t(l, 'refRule', { n: maxN, m: win }) : '';
+  const text = t(l, 'ref', {
+    reward: fmt(refReward(Number(r.valid) + 1)), total: r.total, valid: r.valid, pending: Math.max(0, r.total - r.valid - spamN), spam: spamN,
+    refEarned: fmt(r.earned), link, tiers: tierLines(tiers, base), rule
+  });
+  return show(chat, mid, text, [[ubtn(t(l, 'refShareBtn'), share, 'success')], [btn(t(l, 'adBackBtn'), 'pf:home')]]);
 }
 
 // ---------- Tasks ----------
@@ -254,24 +309,6 @@ async function showTasks(chat, user, mid) {
     btn(t(l, 'check'), `chk:${tk.id}`, 'success')
   ]);
   return show(chat, mid, text, kb);
-}
-
-// ---------- Referral ----------
-async function showRef(chat, user) {
-  const l = user.lang;
-  const { data: s } = await sb.rpc('ref_stats', { uid: user.id });
-  const r = s || { total: 0, valid: 0, spam: 0, earned: 0 };
-  const spamN = Number(r.spam) || 0;
-  const link = `https://t.me/${BOT_USERNAME}?start=ref_${user.id}`;
-  const share = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(plain(t(l, 'refShareText')))}`;
-  const base = Number(S('ref_reward')) || 0;
-  const tiers = parseTiers(S('ref_tiers')) || parseTiers(DEFAULT_TIERS);
-  const maxN = Number(S('ref_spam_max') ?? 1), win = Number(S('ref_spam_minutes') ?? 2);
-  const rule = maxN > 0 && win > 0 ? '\n\n' + t(l, 'refRule', { n: maxN, m: win }) : '';
-  return send(chat, t(l, 'ref', {
-    reward: fmt(refReward(Number(r.valid) + 1)), total: r.total, valid: r.valid, pending: Math.max(0, r.total - r.valid - spamN), spam: spamN,
-    refEarned: fmt(r.earned), link, tiers: tierLines(tiers, base), rule
-  }), { reply_markup: { inline_keyboard: [[ubtn(t(l, 'refShareBtn'), share, 'success')]] } });
 }
 
 // ====================== CALLBACKS ======================
@@ -314,6 +351,16 @@ async function onCallback(q) {
   }
   if (await gateBlocked(chat, user, adm)) return A();
 
+  // Profile screen
+  if (d.startsWith('pf:')) {
+    await A();
+    const k = d.slice(3);
+    if (k === 'bal') return showBalance(chat, user, mid);
+    if (k === 'ref') return showRef(chat, user, mid);
+    return showProfile(chat, user, mid);
+  }
+  // Live chat
+  if (d.startsWith('lv:')) return live.cb(q, user, d.slice(3));
   // Add Task / Deposit flow
   if (d.startsWith('ad:')) return ads.cb(q, user, d.slice(3));
 
@@ -324,7 +371,9 @@ async function onCallback(q) {
     const min = Number(S('min_withdraw') || 0);
     if (Number(user.balance) < min || Number(user.balance) <= 0) return send(chat, t(l, 'insufficient', { balance: fmt(user.balance), min: fmt(min) }));
     const left = await cooldownLeft(user.id);
-    if (left > 0) return send(chat, t(l, 'cooldown', { time: dur(left), hours: S('withdraw_cooldown_hours') ?? 6 }));
+    if (left > 0) return send(chat, limitMsg(l, 'cooldown', left));
+    const dl = await dailyLeft(user.id);
+    if (dl > 0) return send(chat, limitMsg(l, 'daily', dl));
     if (!user.device_verified) {
       return send(chat, t(l, 'verifyNeeded'), { reply_markup: { inline_keyboard: [[mkBtn(t(l, 'verifyBtn'), { web_app: { url: `${process.env.SITE_URL}/verify.html?lang=${l}` } }, 'primary')]] } });
     }
@@ -338,7 +387,9 @@ async function onCallback(q) {
     const { uid, amount } = user.state_data;
     if (!user.device_verified) return send(chat, t(l, 'verifyFail'));
     const left = await cooldownLeft(user.id);
-    if (left > 0) { await setState(user.id, null); return send(chat, t(l, 'cooldown', { time: dur(left), hours: S('withdraw_cooldown_hours') ?? 6 })); }
+    if (left > 0) { await setState(user.id, null); return send(chat, limitMsg(l, 'cooldown', left)); }
+    const dl = await dailyLeft(user.id);
+    if (dl > 0) { await setState(user.id, null); return send(chat, limitMsg(l, 'daily', dl)); }
     const { data: wid, error } = await sb.rpc('request_withdrawal', { uid: user.id, acc: String(uid), amt: amount });
     await setState(user.id, null);
     if (error) return send(chat, t(l, 'insufficient', { balance: fmt(user.balance), min: fmt(S('min_withdraw') || 0) }));
