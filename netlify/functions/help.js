@@ -15,11 +15,14 @@ Section gulo:
 💳 Withdrawals — pending approve/reject, history, CSV
 💰 Deposits — user der deposit verify kore balance add
 🚀 Orders — user der banano task (Add Task) review
+💬 Live chats — user der live support chat
 🎁 Promo codes — user der gift code
 📢 Broadcast — shobai ke message
 📌 Edit texts — bot-er shob lekha + keyboard button-er naam (3 language)
-🔒 Settings — withdraw, referral, add task, security, anti-spam
+🔒 Settings — withdraw, referral, add task, live chat, security, anti-spam
 💬 Help — ei guide
+
+User keyboard: Profile (Balance + Referral), Tasks, Language, Live chat, Add task.
 
 Commands:
 /start — user bot shuru kore
@@ -40,7 +43,7 @@ Premium emoji dite:
 1) Seraser premium emoji tomar message-e paste koro. Bot auto convert kore nibe.
 2) Ba token lekho: {{fire}} {{money}} (list: Help → Premium emoji)
 
-Keyboard button er naam: btn_bal, btn_tasks, btn_ads, btn_ref, btn_sup, btn_lang.
+Keyboard button er naam: btn_profile, btn_tasks, btn_lang, btn_live, btn_ads. (btn_bal, btn_ref = Profile er bhitorer button.)
 Naam er shurute {{token}} dile oita button icon hoy. Jemon: {{wallet}} Balance
 Notun naam user ra pabe jokhon tara /start dibe ba language bodlabe. Purano keyboard e purano naam o kaj kore.
 
@@ -48,10 +51,37 @@ Mone rekho: ekta language edit korle shudhu oi language er user ra dekhbe. Tin l
 Edit korar ~20 second por sobar kache update hoy.`
   },
   {
+    id: 'live', title: 'Live chat',
+    body: `💬 LIVE CHAT (paid support)
+
+User "Live chat" chaple intro (condition + price) dekhe. Start chaple balance theke price kete chat khole.
+Balance kom hole Start kaj kore na ("You need $x more") ar Deposit button dekhay.
+
+TOMAR KAJ:
+• User message dile tomader shobar kache ashe (header: #chat · naam · ID). Photo/file/voice o ashe.
+• Uttor dite Telegram er REPLY kore oi message e reply koro (swipe / right-click → Reply). Text, photo, file shob pathano jay.
+• Reply korar por ekta "✅ Sent" message ashe, tate:
+   ⛔ End chat — chat bondho, user message pay. Notun chat e abar charge.
+   🔁 Keep open — kichu hoy na, chat chalu thake, notun charge lage na.
+   💸 End & refund — chat bondho + user er taka ferot.
+• Kono button na chaple chat chalu thake. Header e o "End chat" button ache.
+• Panel → Live chats: open chat list, card, history.
+
+SETTINGS: Settings → Live chat
+• Price per session (default $0.10)
+• Auto-close (ghonta): kono activity na thakle chat auto bondho (default 24, 0 = kokhono na)
+• Max user messages per minute (default 15, 0 = limit nai)
+• Live chat ON/OFF
+
+⚠️ Ekoi message e dui admin reply korle dutoi user er kache jay. Ek jon handle korle bhalo.
+⚠️ Reply na kore normal message dile ota user er kache jay na.
+Admin nijei test korte parbe (Live chat chape, nijer message nijei pabe).`
+  },
+  {
     id: 'ads', title: 'Add Task & Deposit',
     body: `🚀 ADD TASK (user der task) & DEPOSIT
 
-Keyboard e "Add Task" button. User ekta task banay, onno user ra seta kore reward pay, user er channel/link grow kore.
+Keyboard e "Add Task" button (shobar shesh line e). User ekta task banay, onno user ra seta kore reward pay, user er channel/link grow kore.
 
 FLOW: intro + shob condition → Step 1 balance check → type (Channel / Link / Bot) → link → title → quantity → review → Place order.
 • Balance kom hole Next kaj kore na ("You need $x more") ar Deposit button dekhay. Balance enough hole Deposit button thake na.
@@ -136,6 +166,7 @@ Task edit: title, link, reward, reset, channel, on/off, delete.`
     id: 'ref', title: 'Referral',
     body: `👥 REFERRAL
 
+User Profile → Referral e dekhe.
 Valid kokhon: notun user referral link diye ashe → language bache → shob force-join channel e join kore Continue chape. Tokhon-i referrer er valid count + reward hoy.
 Pending: ashche kintu channel join kore ni.
 Spam: niche dekho.
@@ -161,25 +192,25 @@ Settings → Referral:
 • Window minutes (default 2)
 Rule: ekjon referrer er link diye window er moddhe max er beshi notun user ashle extra user "spam referral" hishebe mark hoy. Spam referral e kono reward hoy na, valid count e-o ashe na.
 0 dile rule bondho.
-User tar Referral screen e "Spam (no reward)" count ar rule dekhte pay.
 Spam dhora hoy user bot e prothom ashar somoy (referral link diye).
 False positive (asol manush): Users → Spam referrals → user chapo → "Approve referral (not spam)". Se already force-join pass kore thakle reward sathe sathe jog hoy.
 Dhoro 2 bondhu ekshathe link e chap dilo, tokhon ekjon spam hobe. Tai window choto rakho ba max ektu baro (jemon 3 per 2 min).
 
-User er Referral screen e dekhe: Total invited, Valid, Pending, Spam, Earned, reward step gulo, next valid referral koto dibe, share button.
 Edit texts e "ref" text customise korle %tiers% ar %rule% variable rakho, na hole step ar rule dekhabe na.
-
 Fraud dhorte: Users → user card → Duplicates (same device/IP). Nijeke refer kora auto block.`
   },
   {
     id: 'wd', title: 'Withdraw',
     body: `💳 WITHDRAW
 
-User flow: Balance → Withdraw → balance check → cooldown check → device verify → Binance UID → amount → Confirm → tomader kache Approve/Reject.
+User flow: Profile → Balance → Withdraw → balance check → cooldown → daily limit → device verify → Binance UID → amount → Confirm → tomader kache Approve/Reject.
 
 Approve = total_withdrawn e jog hoy. Reject = balance ferot.
-Cooldown: Settings → Withdraw & tasks → Withdraw cooldown (default 6h, 0 = off). Rejected request count hoy na.
-⚠️ Admin der o cooldown lage. Test korte 0 kore nio.
+Settings → Withdraw & tasks:
+• Withdraw cooldown (default 6h): ekta withdraw er por next withdraw koto ghonta por. 0 = off.
+• Max withdrawals per 24 hours (default 3): rolling 24 ghonta e sorboccho koyta. 0 = unlimited. Limit hole user "next withdrawal in x" dekhe.
+• Rejected request duto-te gone hoy na.
+⚠️ Admin der o cooldown / limit lage. Test korte 0 kore nio.
 Min/Max: oi page e.
 Bondho: Settings → General → Withdrawals toggle.
 Pending list: Withdrawals → Pending. History ar CSV export ache.
@@ -205,8 +236,8 @@ Limit: eta 100% fool-proof na. App data clear / reinstall korle token bodlay. Ta
     id: 'spam', title: 'Anti-spam',
     body: `🛡 ANTI-SPAM (button / command)
 
-Bot er baire kono message, sticker, ba oichhik text dile bot kono uttor dey na, ar eta spam hishab hoy NA.
-Spam hishab hoy shudhu button / command beshi bar chaple: menu button, inline button (Check, Withdraw...), /start, /promo.
+Bot er baire kono message, sticker, ba oichhik text dile bot kono uttor dey na, ar eta spam hishab hoy NA. (Live chat khola thakle oi message admin er kache jay.)
+Spam hishab hoy shudhu button / command beshi bar chaple: menu button, inline button, /start, /promo.
 
 Default: 30 second er moddhe 10 ber (ba beshi) chaple "offense".
 Offense ladder: 1st sotorkobarta, 2nd 1 min, 3rd 3 min, 4th 5 min, 5th 30 min, 6th BAN.
@@ -218,7 +249,7 @@ Settings → Anti-spam theke bodlano jay:
 • Mute ladder (default 1,3,5,30 minutes)
 • Forget old offenses after (hours)
 
-Mone rekho: task Check chapao gone. Add Task er step gulo te button chapao gone, tai onek step e limit ektu barao.
+Mone rekho: task Check, Add Task er step gulo te button chapao gone, tai limit ektu barao.
 Restricted user dekhle inline button e "tumi restricted" alert pay, kono kaj hoy na.
 Unmute/Unban: Users → user card → Unmute / Unban. Banned/Muted list: Users → Banned / muted.
 Admin der spam hishab hoy na.
@@ -261,6 +292,10 @@ money wallet uptrend profile trash cancel verified bell letter stop binance warn
 
 • Bot reply dey na → browser e https://api.telegram.org/botTOKEN/getWebhookInfo kholo. last_error_message dekho. 401 = WEBHOOK_SECRET mile nai. 500 = Cloudflare Worker log dekho; Supabase pause hoyeche kina dekho. Secret change korle Worker e Deploy korte hobe.
 • Bot dhime → Supabase region (Seoul) ar wrangler.toml er [placement] region mile kina dekho.
+• Keyboard purano dekhay → user ke /start dite bolo.
+• Live chat: user message dilo kintu tomar kache ashe na → ADMIN_IDS secret thik kina dekho, ar tumi bot ke /start diyecho kina (bot admin ke message pathate hole admin age bot ke start korte hobe).
+• Live chat: reply gelo na → Telegram er Reply diye ota kore ni (normal message dile jay na), ba chat already ended.
+• Live chat start hoy na → SQL (live chat migration) run korcho kina, ar Settings → Live chat ON kina dekho.
 • Premium emoji dekhay na → owner account Premium kina dekho, Telegram update koro. Na hole bot nijei normal emoji dey.
 • Button color/icon dekhay na → Telegram app update koro. Purano desktop version e hoy na.
 • Force-join kaj kore na → bot channel e admin na ba Chat ID vul. Force-join page e 🧪 Test chapo.
@@ -268,8 +303,7 @@ money wallet uptrend profile trash cancel verified bell letter stop binance warn
 • Task Check e "age link khulo" → user task button e click kore ni. Settings e wait second beshi kina dekho. SITE_URL secret thik kina dekho (https://earnix-bot.xxx.workers.dev, shesh e / chhara).
 • Add Task button kaj kore na → SQL (Add Task migration) run korcho kina dekho. Settings → Add Task feature ON kina dekho.
 • Deposit e wallet dekhay na → Settings → Add Task & Deposit → Deposit wallet address set koro.
-• User er channel order e join verify hoy na → bot oi channel e admin na. Orders → 🧪 Test channel access.
-• Withdraw kora jay na → cooldown, min balance, withdrawals OFF, force-join, device verify check koro.
+• Withdraw kora jay na → cooldown, daily limit, min balance, withdrawals OFF, force-join, device verify check koro.
 • User verify te block → Device mode TOKEN kore dao ba Reset device.
 • User restricted hoye gese → Users → card → Unmute. Limit beshi choto hole Settings → Anti-spam e barao.
 • Referral reward pay na → user spam referral kina dekho (Users → Spam referrals). Settings → Referral e window / max bodlao.
@@ -287,7 +321,7 @@ money wallet uptrend profile trash cancel verified bell letter stop binance warn
 Secrets (Cloudflare → Workers & Pages → earnix-bot → Settings → Variables and Secrets, prottek-ta Secret):
 BOT_TOKEN, BOT_USERNAME, SUPABASE_URL, SUPABASE_SERVICE_KEY, WEBHOOK_SECRET, ADMIN_IDS (comma diye), SITE_URL
 
-Notun admin: ADMIN_IDS secret e numeric ID comma diye jog → Deploy.
+Notun admin: ADMIN_IDS secret e numeric ID comma diye jog → Deploy. Notun admin ke bot e ekbar /start dite hobe.
 Code update: GitHub e file open → ✏️ edit → Commit. Cloudflare auto deploy kore.
 
 Webhook set:
@@ -300,7 +334,7 @@ Backup: Supabase → Database → Backups, ba panel theke CSV export.
 
 Files:
 worker.js wrangler.toml
-netlify/functions/ bot.js admin.js ads.js core.js go.js help.js i18n.js emoji.js verify.js
+netlify/functions/ bot.js admin.js ads.js live.js core.js go.js help.js i18n.js emoji.js verify.js
 public/verify.html`
   }
 ];
